@@ -2,8 +2,8 @@ name: Auto post Singapore F&B news + Instagram
 
 on:
   schedule:
-    # 09:00 Asia/Singapore = 01:00 UTC, every day.
-    - cron: "0 1 * * *"
+    # 09:00 Asia/Tokyo (JST, UTC+9) = 00:00 UTC, every day.
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 concurrency:
