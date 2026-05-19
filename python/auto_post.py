@@ -59,11 +59,17 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
+# Repo root = parent of this file's directory (python/).  All relative paths
+# (.env files, BRAND_LOGO_SRC=public/icon.png, etc.) are resolved against this
+# so the script works regardless of the caller's current working directory.
+from pathlib import Path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 try:  # optional but recommended for local dev
     from dotenv import load_dotenv
-    load_dotenv()
-    load_dotenv(".env.local", override=False)
-    load_dotenv(".env.auto-post", override=False)
+    load_dotenv(REPO_ROOT / ".env")
+    load_dotenv(REPO_ROOT / ".env.local", override=False)
+    load_dotenv(REPO_ROOT / ".env.auto-post", override=False)
 except ImportError:  # pragma: no cover
     pass
 
@@ -366,7 +372,7 @@ def sb_update_news(row_id: str, patch: Dict[str, Any]) -> None:
 def sb_storage_upload(image_bytes: bytes, ext: str = "jpg") -> Optional[str]:
     """Upload binary image to Supabase Storage and return the public URL."""
     digest = hashlib.sha1(image_bytes[:1024]).hexdigest()[:10]
-    path = f"news/{dt.datetime.utcnow().strftime('%Y%m%d')}-{digest}.{ext}"
+    path = f"news/{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d')}-{digest}.{ext}"
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
     url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{path}"
     headers = {
@@ -491,18 +497,39 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
+CONTENT_MAX_SENTENCES = 6
+
+
+def _to_plain_text(text: str, max_sentences: int = CONTENT_MAX_SENTENCES) -> str:
+    """Strip HTML, collapse whitespace, cap at N sentences.
+
+    Defensive cleanup applied to model output even though the prompt asks for
+    plain text — keeps the database free of stray <p>/<a> tags and runaway
+    paragraphs. Splits on English (.!?) and CJK (。！？) terminators.
+    """
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return ""
+    parts = re.split(r"(?<=[.!?。！？])\s+", text)
+    return " ".join(parts[:max_sentences]).strip()
+
+
 def summarise_bilingual(title: str, body: str) -> Dict[str, str]:
     """Return dict with title_en, title_ja, excerpt_en, excerpt_ja,
-    content_en, content_ja, caption_ig."""
+    content_en, content_ja, caption_ig.  Content fields are plain text,
+    no HTML, capped at CONTENT_MAX_SENTENCES sentences."""
     client = _openai()
     fallback = {
         "title_en":   title.strip(),
         "title_ja":   title.strip(),
-        "excerpt_en": (body or title)[:160].strip(),
-        "excerpt_ja": (body or title)[:160].strip(),
-        "content_en": (body or title)[:600].strip(),
-        "content_ja": (body or title)[:600].strip(),
-        "caption_ig": (body or title)[:200].strip(),
+        "excerpt_en": _to_plain_text(body or title, max_sentences=1)[:160],
+        "excerpt_ja": _to_plain_text(body or title, max_sentences=1)[:160],
+        "content_en": _to_plain_text(body or title),
+        "content_ja": _to_plain_text(body or title),
+        "caption_ig": _to_plain_text(body or title, max_sentences=3)[:600],
     }
     if client is None:
         log.warning("OPENAI_API_KEY not set — using naive truncation.")
@@ -516,9 +543,12 @@ def summarise_bilingual(title: str, body: str) -> Dict[str, str]:
         '  "title_ja":   日本語タイトル (90文字以内)\n'
         '  "excerpt_en": one-sentence English excerpt (<= 160 chars)\n'
         '  "excerpt_ja": 日本語1文要約 (160文字以内)\n'
-        '  "content_en": 2-3 short English paragraphs as HTML <p> tags\n'
-        '  "content_ja": HTML<p>タグで日本語の本文 (2〜3段落)\n'
-        '  "caption_ig": Instagram caption (English, <= 600 chars, no hashtags — appended later)\n'
+        f'  "content_en": plain text only, no HTML, no Markdown, no bullet points, '
+        f'AT MOST {CONTENT_MAX_SENTENCES} sentences\n'
+        f'  "content_ja": プレーンテキストのみ。HTMLやMarkdown、箇条書きは禁止。'
+        f'最大{CONTENT_MAX_SENTENCES}文\n'
+        '  "caption_ig": Instagram caption (English, plain text, <= 600 chars, no hashtags — appended later)\n'
+        "Do not include the source URL or any link in any field.\n"
         "Stay factual. Do not invent details that are not in the source.\n\n"
         f"SOURCE TITLE: {title}\n\nSOURCE BODY:\n{body_clipped}"
     )
@@ -536,6 +566,13 @@ def summarise_bilingual(title: str, body: str) -> Dict[str, str]:
             v = data.get(k)
             if isinstance(v, str) and v.strip():
                 out[k] = v.strip()
+        # Defensive: enforce plain-text + sentence cap on content fields even
+        # if the model slipped HTML or extra paragraphs back in.
+        out["content_en"] = _to_plain_text(out["content_en"])
+        out["content_ja"] = _to_plain_text(out["content_ja"])
+        out["excerpt_en"] = _to_plain_text(out["excerpt_en"], max_sentences=1)[:160]
+        out["excerpt_ja"] = _to_plain_text(out["excerpt_ja"], max_sentences=1)[:160]
+        out["caption_ig"] = _to_plain_text(out["caption_ig"], max_sentences=3)[:600]
         return out
     except Exception as exc:
         log.error("OpenAI summarisation failed: %s", exc)
@@ -563,7 +600,12 @@ def _load_logo() -> Optional[bytes]:
             r.raise_for_status()
             _logo_cache = r.content
         else:
-            with open(src, "rb") as fh:
+            # Resolve relative paths (e.g. "public/icon.png") against the repo
+            # root so this works no matter what the caller's CWD is.
+            path = Path(src)
+            if not path.is_absolute():
+                path = REPO_ROOT / path
+            with open(path, "rb") as fh:
                 _logo_cache = fh.read()
     except Exception as exc:
         log.warning("Could not load brand logo from %s: %s", src, exc)
@@ -894,22 +936,15 @@ def collect_articles() -> List[Dict[str, Any]]:
             else:
                 image_url = generate_image_for(summary["title_en"], category)
 
-            source_html_en = (
-                f"<p>Source: <a href=\"{link}\" target=\"_blank\" rel=\"noopener\">{link}</a></p>"
-            )
-            source_html_ja = (
-                f"<p>元記事: <a href=\"{link}\" target=\"_blank\" rel=\"noopener\">{link}</a></p>"
-            )
-
-            now_iso = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            now_iso = dt.datetime.now(dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z"
             row = {
                 "slug":               slug,
                 "title":              summary["title_en"],
                 "title_ja":           summary["title_ja"],
                 "excerpt":            summary["excerpt_en"],
                 "excerpt_ja":         summary["excerpt_ja"],
-                "content":            f"{summary['content_en']}\n{source_html_en}",
-                "content_ja":         f"{summary['content_ja']}\n{source_html_ja}",
+                "content":            summary["content_en"],
+                "content_ja":         summary["content_ja"],
                 "image":              image_url or "",
                 "category":           category,
                 "author":             NEWS_AUTHOR,
@@ -979,7 +1014,7 @@ def post_one_to_instagram() -> Optional[str]:
         )
         return None
 
-    now_iso = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    now_iso = dt.datetime.now(dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z"
     sb_update_news(item["id"], {
         "instagram_posted":    True,
         "instagram_post_id":   media_id,
