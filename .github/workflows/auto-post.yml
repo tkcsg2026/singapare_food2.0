@@ -1,0 +1,42 @@
+name: Auto post Singapore F&B news + Instagram
+
+on:
+  schedule:
+    # 09:00 Asia/Singapore = 01:00 UTC, every day.
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: auto-post
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run auto_post.py
+        env:
+          NEXT_PUBLIC_SUPABASE_URL:  ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
+          IG_USER_ID:                ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN:           ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_APP_ID:                 ${{ secrets.IG_APP_ID }}
+          IG_APP_SECRET:             ${{ secrets.IG_APP_SECRET }}
+          SLACK_WEBHOOK_URL:         ${{ secrets.SLACK_WEBHOOK_URL }}
+          NEWS_AUTHOR: Editorial Department
+          MAX_NEW_ARTICLES_PER_RUN: "5"
+          BRAND_LOGO_SRC: public/icon.png
+          LOGO_OVERLAY_ENABLED: "true"
+        run: python auto_post.py run -v

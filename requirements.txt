@@ -1,0 +1,8 @@
+requests>=2.32
+feedparser>=6.0
+beautifulsoup4>=4.12
+python-dotenv>=1.0
+openai>=1.40
+Pillow>=10.4
+# Windows / minimal Linux images ship without IANA tz data; ZoneInfo("Asia/Singapore") needs it.
+tzdata>=2024.1; platform_system == "Windows"

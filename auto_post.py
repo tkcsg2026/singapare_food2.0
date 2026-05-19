@@ -1,0 +1,1001 @@
+"""
+auto_post.py
+============
+
+Daily automation for The Kitchen Connection (singapore_food2.0).
+
+Pipeline
+--------
+1. Collect Singapore F&B stories from RSS feeds + a small set of static URLs
+   (mirroring the original client spec).
+2. Use OpenAI to produce a concise bilingual (EN / JA) summary, excerpt, body
+   and an Instagram caption for each story.
+3. If a story has no usable image, generate one with DALL·E using a
+   category-specific editorial prompt, overlay the site logo, then upload
+   the composite to Supabase Storage.
+4. Insert the row into Supabase public.news_articles (published=true) with
+   DEFAULT_TAGS attached.
+5. Pick today's target category according to the weekly schedule, find the
+   best published-but-not-instagrammed article in that category, and publish
+   it to the @the_kitchen_connection_sg Instagram Business account via
+   Instagram Graph API. Set instagram_posted=true to prevent re-posting.
+6. Send a Slack notification (success or failure) so the team has a daily
+   trail without checking logs.
+
+Manual articles created from the admin dashboard are picked up by the same
+Instagram queue automatically — the picker only requires
+``published = true AND image <> '' AND instagram_posted = false``.
+
+Run modes (CLI)
+---------------
+    python auto_post.py collect         # scrape + summarise + insert news only
+    python auto_post.py instagram       # post the next queued article to IG
+    python auto_post.py run             # collect then instagram (daily default)
+    python auto_post.py refresh-token   # refresh the long-lived IG token
+
+Required environment variables — see ``.env.auto-post.example``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import datetime as dt
+import hashlib
+import io
+import json
+import logging
+import os
+import re
+import sys
+import time
+import traceback
+import unicodedata
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
+
+import feedparser
+import requests
+from bs4 import BeautifulSoup
+
+try:  # optional but recommended for local dev
+    from dotenv import load_dotenv
+    load_dotenv()
+    load_dotenv(".env.local", override=False)
+    load_dotenv(".env.auto-post", override=False)
+except ImportError:  # pragma: no cover
+    pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_NEWS_BUCKET", "logos")
+
+def _resolve_openai_api_key() -> str:
+    # Mirror src/lib/chatbot/provider.ts:resolveOpenAiApiKey — accept the
+    # canonical name plus common legacy / lowercase / typo'd aliases so a
+    # single key in .env.local (under any of these names) is enough to make
+    # both the website chatbot and this script work.
+    direct = [
+        os.environ.get("OPENAI_API_KEY"),
+        os.environ.get("OPENAPI_API_KEY"),
+        os.environ.get("openai_api_key"),
+        os.environ.get("OPENAI_KEY"),
+        os.environ.get("OPENAPI_KEY"),
+    ]
+    for candidate in direct:
+        if candidate and candidate.strip():
+            return candidate.strip()
+    aliases = {
+        "OPENAIAPIKEY",
+        "OPENAPIAPIKEY",
+        "OPENAIKEY",
+        "OPENAPIKEY",
+        "OPENAIAPIKEY",
+    }
+    for name, value in os.environ.items():
+        normalized = re.sub(r"[^A-Za-z0-9]", "", name).upper()
+        if normalized in aliases and value and value.strip():
+            return value.strip()
+    return ""
+
+
+OPENAI_API_KEY = _resolve_openai_api_key()
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+OPENAI_IMAGE_SIZE = os.environ.get("OPENAI_IMAGE_SIZE", "1024x1024")
+
+# Instagram Graph API — see docs/AUTO_POST_INSTAGRAM.md.
+IG_USER_ID = os.environ.get("IG_USER_ID", "")
+IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
+IG_APP_ID = os.environ.get("IG_APP_ID", "")
+IG_APP_SECRET = os.environ.get("IG_APP_SECRET", "")
+IG_GRAPH_VERSION = os.environ.get("IG_GRAPH_VERSION", "v21.0")
+IG_MAX_RETRY_ATTEMPTS = int(os.environ.get("IG_MAX_RETRY_ATTEMPTS", "3"))
+
+# Slack notifications. Set SLACK_WEBHOOK_URL in the environment (or GitHub
+# Actions secret) — leave unset to disable Slack notifications.
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+
+NEWS_AUTHOR = os.environ.get("NEWS_AUTHOR", "Editorial Department")
+MAX_NEW_ARTICLES_PER_RUN = int(os.environ.get("MAX_NEW_ARTICLES_PER_RUN", "5"))
+
+try:
+    SGT = ZoneInfo("Asia/Singapore")
+except Exception:  # Windows without `tzdata` installed
+    SGT = dt.timezone(dt.timedelta(hours=8), name="Asia/Singapore")
+
+# Tags written to every auto-posted row (client requirement §B / §2).
+DEFAULT_TAGS = ["F&B News", "Singapore"]
+
+# Brand hashtags requested by the client.
+INSTAGRAM_HASHTAGS = [
+    "#SingaporeFNB",
+    "#SingaporeRestaurants",
+    "#SingaporeFood",
+    "#SingaporeBusiness",
+    "#SGFNB",
+]
+
+CATEGORIES = ("regulation", "trend", "event", "industry")
+
+# ── Weekly category rotation ────────────────────────────────────────────────
+# Client requirement: ratio of Industry×3 / Trend×2 / Regulation×1 / Event×1 per
+# week, with one fixed category per weekday.  Monday=0 … Sunday=6.
+WEEKDAY_CATEGORY = {
+    0: "industry",     # Mon
+    1: "regulation",   # Tue
+    2: "trend",        # Wed
+    3: "industry",     # Thu
+    4: "event",        # Fri
+    5: "trend",        # Sat
+    6: "industry",     # Sun
+}
+
+# ── Brand identity ──────────────────────────────────────────────────────────
+# Visual tone applied to every generated image.  Brand colors are pulled from
+# tailwind.config.ts (warm earth-tone hospitality palette).
+BRAND_COLORS_HEX = "#1f2937 (charcoal), #f59e0b (amber), #fafaf9 (warm white)"
+BRAND_STYLE = (
+    "Photorealistic editorial photography in The Kitchen Connection brand style: "
+    f"warm and inviting color palette featuring {BRAND_COLORS_HEX}, "
+    "natural soft lighting, shallow depth of field, premium magazine aesthetic. "
+    "No embedded text, no watermarks, no logos in the generated image itself "
+    "(the brand logo is composited separately afterwards)."
+)
+
+CATEGORY_IMAGE_PROMPTS: Dict[str, str] = {
+    "regulation": (
+        "Editorial photograph of official Singapore government buildings or "
+        "regulatory documents related to food safety — exterior shots of "
+        "modern civic architecture, clean desks with food-safety paperwork, "
+        "or inspection scenes. Formal, professional, bright daylight."
+    ),
+    "event": (
+        "Editorial photograph of an elegant Singapore restaurant interior set "
+        "for a special event — tables with linen and tableware, warm ambient "
+        "lighting, no people facing the camera. Premium hospitality feel."
+    ),
+    "trend": (
+        "Editorial macro close-up of fresh Singapore food ingredients — "
+        "tropical fruit, herbs, spices, plated dishes. Natural light, vibrant "
+        "colors, shallow depth of field, hand-styled food photography."
+    ),
+    "industry": (
+        "Editorial photograph of a busy professional commercial kitchen in "
+        "Singapore — chefs in motion, stainless-steel surfaces, plating in "
+        "progress. Bright, modern, clean composition, no people facing camera."
+    ),
+}
+
+# Logo overlay source.  Path (in repo) or http(s) URL.  Default uses the
+# existing site icon at public/icon.png — present in this repo.
+BRAND_LOGO_SRC = os.environ.get("BRAND_LOGO_SRC", "public/icon.png")
+LOGO_OVERLAY_ENABLED = os.environ.get("LOGO_OVERLAY_ENABLED", "true").lower() == "true"
+
+# ── News sources ────────────────────────────────────────────────────────────
+# RSS feeds rotate fresh stories; the static URLs come from the original
+# client spec so high-signal regulator / industry pages are also covered.
+SOURCES: List[Dict[str, str]] = [
+    {"name": "GoogleNews – Singapore F&B",
+     "rss": "https://news.google.com/rss/search?q=Singapore+food+beverage&hl=en-SG&gl=SG&ceid=SG:en",
+     "category": "industry"},
+    {"name": "GoogleNews – Singapore Restaurants",
+     "rss": "https://news.google.com/rss/search?q=Singapore+restaurant+opening&hl=en-SG&gl=SG&ceid=SG:en",
+     "category": "event"},
+    {"name": "GoogleNews – SFA Singapore",
+     "rss": "https://news.google.com/rss/search?q=%22Singapore+Food+Agency%22&hl=en-SG&gl=SG&ceid=SG:en",
+     "category": "regulation"},
+    {"name": "GoogleNews – Singapore Food Trend",
+     "rss": "https://news.google.com/rss/search?q=Singapore+food+trend&hl=en-SG&gl=SG&ceid=SG:en",
+     "category": "trend"},
+    # Static high-signal pages (re-introduced from client spec).
+    {"name": "SFA – SAFE Framework",
+     "url": "https://www.sfa.gov.sg/food-for-thought/article/detail/safe-framework---strengthening-food-safety-together--one-grade-at-a-time",
+     "category": "regulation"},
+    {"name": "Time Out – New Restaurants",
+     "url": "https://www.timeout.com/singapore/restaurants/new-restaurants-in-singapore",
+     "category": "event"},
+    {"name": "Daniel Food Diary – Singapore",
+     "url": "https://danielfooddiary.com/category/singapore/",
+     "category": "trend"},
+]
+
+USER_AGENT = (
+    "Mozilla/5.0 (compatible; KitchenConnectionBot/1.0; "
+    "+https://thekitchenconnection.sg)"
+)
+HTTP_TIMEOUT = 30
+
+log = logging.getLogger("auto_post")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Slack notifications
+# ─────────────────────────────────────────────────────────────────────────────
+
+def notify_slack(text: str, level: str = "info") -> None:
+    """Best-effort Slack notification. Never raises."""
+    if not SLACK_WEBHOOK_URL:
+        return
+    emoji = {
+        "info":    ":information_source:",
+        "success": ":white_check_mark:",
+        "warning": ":warning:",
+        "error":   ":x:",
+    }.get(level, ":memo:")
+    payload = {"text": f"{emoji} *auto_post* — {text}"}
+    try:
+        r = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=10)
+        if not r.ok:
+            log.warning("Slack returned %s: %s", r.status_code, r.text[:200])
+    except Exception as exc:
+        log.warning("Slack notification failed: %s", exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Supabase REST helpers (service_role — RLS bypassed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sb_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise RuntimeError(
+            "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set."
+        )
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def sb_select_news(filters: Dict[str, str], limit: int = 1,
+                   select: str = "*", order: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: Dict[str, str] = {**filters, "select": select, "limit": str(limit)}
+    if order:
+        params["order"] = order
+    url = f"{SUPABASE_URL}/rest/v1/news_articles"
+    r = requests.get(url, params=params, headers=_sb_headers(), timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
+def sb_insert_news(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Insert a row, returning the inserted record. Skips on slug conflict."""
+    url = f"{SUPABASE_URL}/rest/v1/news_articles"
+    headers = _sb_headers({"Prefer": "return=representation,resolution=ignore-duplicates"})
+    r = requests.post(url, headers=headers, json=row, timeout=HTTP_TIMEOUT)
+    if r.status_code == 409:
+        log.info("Slug already exists, skipping: %s", row.get("slug"))
+        return None
+    if not r.ok:
+        log.error("Insert failed (%s): %s", r.status_code, r.text[:400])
+        r.raise_for_status()
+    data = r.json()
+    return data[0] if isinstance(data, list) and data else (data or None)
+
+
+def sb_update_news(row_id: str, patch: Dict[str, Any]) -> None:
+    url = f"{SUPABASE_URL}/rest/v1/news_articles"
+    headers = _sb_headers({"Prefer": "return=minimal"})
+    r = requests.patch(url, params={"id": f"eq.{row_id}"}, headers=headers,
+                       json=patch, timeout=HTTP_TIMEOUT)
+    if not r.ok:
+        log.error("Update failed (%s): %s", r.status_code, r.text[:400])
+        r.raise_for_status()
+
+
+def sb_storage_upload(image_bytes: bytes, ext: str = "jpg") -> Optional[str]:
+    """Upload binary image to Supabase Storage and return the public URL."""
+    digest = hashlib.sha1(image_bytes[:1024]).hexdigest()[:10]
+    path = f"news/{dt.datetime.utcnow().strftime('%Y%m%d')}-{digest}.{ext}"
+    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{path}"
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": mime,
+        "x-upsert": "true",
+    }
+    r = requests.post(url, headers=headers, data=image_bytes, timeout=HTTP_TIMEOUT)
+    if not r.ok:
+        log.error("Storage upload failed (%s): %s", r.status_code, r.text[:300])
+        return None
+    return f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/{path}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Article scraping
+# ─────────────────────────────────────────────────────────────────────────────
+
+def slugify(title: str) -> str:
+    """URL-safe slug with an 8-char title hash suffix.
+
+    Same title → same slug → DB UNIQUE on news_articles.slug rejects duplicates.
+    The hash suffix is the dedup key referenced in the client spec
+    (“タイトル + 日付など”); a deterministic short hash works better than a date
+    because it also catches cross-day re-discoveries of the same story.
+    """
+    normalized = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", normalized.lower()).strip("-")
+    slug = re.sub(r"-+", "-", slug)
+    if not slug:
+        slug = "article"
+    if len(slug) > 70:
+        slug = slug[:70].rstrip("-")
+    h = hashlib.sha1(title.encode("utf-8")).hexdigest()[:8]
+    return f"{slug}-{h}"
+
+
+def fetch_rss_entries(rss_url: str, limit: int = 8) -> List[Dict[str, str]]:
+    log.debug("Fetching RSS: %s", rss_url)
+    feed = feedparser.parse(rss_url)
+    out: List[Dict[str, str]] = []
+    for entry in feed.entries[:limit]:
+        out.append({
+            "title": (entry.get("title") or "").strip(),
+            "link": entry.get("link") or "",
+            "summary": (entry.get("summary") or entry.get("description") or "").strip(),
+            "published": entry.get("published") or entry.get("updated") or "",
+        })
+    return out
+
+
+def fetch_page(url: str) -> Tuple[Optional[str], Optional[str]]:
+    """Return (visible text, og:image URL) for the page, or (None, None)."""
+    try:
+        r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
+        r.raise_for_status()
+    except Exception as exc:
+        log.warning("Failed to fetch %s: %s", url, exc)
+        return None, None
+    soup = BeautifulSoup(r.content, "html.parser")
+    og = soup.find("meta", attrs={"property": "og:image"}) or \
+         soup.find("meta", attrs={"name": "twitter:image"})
+    image = og["content"].strip() if og and og.get("content") else None
+    for el in soup(["script", "style", "header", "footer", "nav", "aside"]):
+        el.extract()
+    text = re.sub(r"\s+", " ", soup.get_text(separator=" ")).strip()
+    return text or None, image
+
+
+def extract_static_titles(url: str, max_items: int = 5) -> List[Dict[str, str]]:
+    """For static category/listing pages, pull the top N article links."""
+    try:
+        r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
+        r.raise_for_status()
+    except Exception as exc:
+        log.warning("Static fetch failed %s: %s", url, exc)
+        return []
+    soup = BeautifulSoup(r.content, "html.parser")
+    seen: set[str] = set()
+    items: List[Dict[str, str]] = []
+    # Anchors inside <article>/<h2>/<h3> are usually article links.
+    candidates = soup.select("article a[href], h2 a[href], h3 a[href]")
+    for a in candidates:
+        href = a.get("href", "").strip()
+        title = a.get_text(strip=True)
+        if not href or not title or len(title) < 12:
+            continue
+        if href.startswith("/"):
+            href = urljoin(url, href)
+        if href in seen or not href.startswith("http"):
+            continue
+        seen.add(href)
+        items.append({"title": title, "link": href, "summary": "", "published": ""})
+        if len(items) >= max_items:
+            break
+    return items
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenAI helpers (SDK v1.x)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_openai_client = None
+
+
+def _openai():
+    global _openai_client
+    if _openai_client is None:
+        if not OPENAI_API_KEY:
+            return None
+        from openai import OpenAI  # lazy import
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
+
+
+def _strip_code_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    return text.strip()
+
+
+def summarise_bilingual(title: str, body: str) -> Dict[str, str]:
+    """Return dict with title_en, title_ja, excerpt_en, excerpt_ja,
+    content_en, content_ja, caption_ig."""
+    client = _openai()
+    fallback = {
+        "title_en":   title.strip(),
+        "title_ja":   title.strip(),
+        "excerpt_en": (body or title)[:160].strip(),
+        "excerpt_ja": (body or title)[:160].strip(),
+        "content_en": (body or title)[:600].strip(),
+        "content_ja": (body or title)[:600].strip(),
+        "caption_ig": (body or title)[:200].strip(),
+    }
+    if client is None:
+        log.warning("OPENAI_API_KEY not set — using naive truncation.")
+        return fallback
+
+    body_clipped = (body or "")[:6000]
+    prompt = (
+        "You are an editor for The Kitchen Connection, a Singapore F&B portal.\n"
+        "Given the source article below, return a strict JSON object with these keys:\n"
+        '  "title_en":   concise English title (<= 90 chars, no quotes)\n'
+        '  "title_ja":   日本語タイトル (90文字以内)\n'
+        '  "excerpt_en": one-sentence English excerpt (<= 160 chars)\n'
+        '  "excerpt_ja": 日本語1文要約 (160文字以内)\n'
+        '  "content_en": 2-3 short English paragraphs as HTML <p> tags\n'
+        '  "content_ja": HTML<p>タグで日本語の本文 (2〜3段落)\n'
+        '  "caption_ig": Instagram caption (English, <= 600 chars, no hashtags — appended later)\n'
+        "Stay factual. Do not invent details that are not in the source.\n\n"
+        f"SOURCE TITLE: {title}\n\nSOURCE BODY:\n{body_clipped}"
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(_strip_code_fences(raw))
+        out = {**fallback}
+        for k in fallback:
+            v = data.get(k)
+            if isinstance(v, str) and v.strip():
+                out[k] = v.strip()
+        return out
+    except Exception as exc:
+        log.error("OpenAI summarisation failed: %s", exc)
+        return fallback
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Image generation + logo overlay
+# ─────────────────────────────────────────────────────────────────────────────
+
+_logo_cache: Optional[bytes] = None
+
+
+def _load_logo() -> Optional[bytes]:
+    """Load the brand logo from disk or URL once per process."""
+    global _logo_cache
+    if _logo_cache is not None:
+        return _logo_cache or None
+    src = BRAND_LOGO_SRC
+    if not src:
+        return None
+    try:
+        if src.startswith(("http://", "https://")):
+            r = requests.get(src, timeout=HTTP_TIMEOUT)
+            r.raise_for_status()
+            _logo_cache = r.content
+        else:
+            with open(src, "rb") as fh:
+                _logo_cache = fh.read()
+    except Exception as exc:
+        log.warning("Could not load brand logo from %s: %s", src, exc)
+        _logo_cache = b""  # negative cache
+        return None
+    return _logo_cache or None
+
+
+def overlay_brand_logo(image_bytes: bytes) -> bytes:
+    """Composite the brand logo onto the bottom-right corner with a soft
+    semi-transparent panel for legibility. Returns JPEG bytes."""
+    if not LOGO_OVERLAY_ENABLED:
+        return image_bytes
+    logo_bytes = _load_logo()
+    if not logo_bytes:
+        return image_bytes
+    try:
+        from PIL import Image
+        base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+        logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+        bw, bh = base.size
+        target_w = max(96, int(bw * 0.18))
+        ratio = target_w / logo.width
+        logo = logo.resize((target_w, max(1, int(logo.height * ratio))), Image.LANCZOS)
+        margin = int(bw * 0.035)
+        # Semi-transparent backing panel for contrast (works on light + dark photos)
+        panel_pad = int(target_w * 0.08)
+        panel = Image.new(
+            "RGBA",
+            (logo.width + panel_pad * 2, logo.height + panel_pad * 2),
+            (250, 250, 249, 170),  # warm white at ~67% opacity
+        )
+        pos_panel = (bw - panel.width - margin, bh - panel.height - margin)
+        base.alpha_composite(panel, pos_panel)
+        pos_logo = (pos_panel[0] + panel_pad, pos_panel[1] + panel_pad)
+        base.alpha_composite(logo, pos_logo)
+        out = io.BytesIO()
+        base.convert("RGB").save(out, format="JPEG", quality=92, optimize=True)
+        return out.getvalue()
+    except Exception as exc:
+        log.warning("Logo overlay failed (%s) — using base image.", exc)
+        return image_bytes
+
+
+def generate_image_for(title: str, category: str) -> Optional[str]:
+    """Generate a brand-styled hero image with DALL·E, overlay the logo, and
+    upload to Supabase Storage. Returns the public image URL."""
+    client = _openai()
+    if client is None:
+        return None
+    base_prompt = CATEGORY_IMAGE_PROMPTS.get(category) or CATEGORY_IMAGE_PROMPTS["industry"]
+    prompt = (
+        f"{base_prompt}\n\n"
+        f"Article: '{title}'.\n\n"
+        f"{BRAND_STYLE}"
+    )
+    try:
+        r = client.images.generate(
+            model=OPENAI_IMAGE_MODEL,
+            prompt=prompt,
+            size=OPENAI_IMAGE_SIZE,
+            n=1,
+        )
+        item = r.data[0]
+        if getattr(item, "url", None):
+            img = requests.get(item.url, timeout=HTTP_TIMEOUT).content
+        else:
+            img = base64.b64decode(item.b64_json)
+        composited = overlay_brand_logo(img)
+        return sb_storage_upload(composited, ext="jpg")
+    except Exception as exc:
+        log.error("Image generation failed: %s", exc)
+        return None
+
+
+def fetch_and_overlay_external(image_url: str) -> Optional[str]:
+    """Download an external image, overlay the logo, and host on Supabase
+    Storage so Instagram has a stable URL. Falls back to the raw URL on error."""
+    try:
+        r = requests.get(image_url, timeout=HTTP_TIMEOUT,
+                         headers={"User-Agent": USER_AGENT})
+        r.raise_for_status()
+        composited = overlay_brand_logo(r.content)
+        public = sb_storage_upload(composited, ext="jpg")
+        return public or image_url
+    except Exception as exc:
+        log.warning("External image proxy failed (%s) — using direct URL.", exc)
+        return image_url
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Category routing & weekly rotation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def classify_category(source_category: str, title: str, body: str) -> str:
+    base = source_category if source_category in CATEGORIES else "industry"
+    text = f"{title} {body}".lower()
+    if any(k in text for k in ("sfa", "regulation", "licen", "compliance",
+                               "ministry", "policy", "ruling", "law")):
+        return "regulation"
+    if any(k in text for k in ("opens", "opening", "festival", "expo",
+                               "event", "gala", "popup", "pop-up")):
+        return "event"
+    if any(k in text for k in ("trend", "rising", "surge", "growth",
+                               "popularity", "plant-based")):
+        return "trend"
+    return base
+
+
+def target_category_for_today() -> str:
+    """Today's Instagram category, per the weekly schedule (SGT)."""
+    weekday = dt.datetime.now(SGT).weekday()
+    return WEEKDAY_CATEGORY[weekday]
+
+
+def pick_for_instagram() -> Optional[Dict[str, Any]]:
+    """Pick the next published-but-not-Instagrammed article.
+
+    1) Prefer today's scheduled category (weekly rotation).
+    2) If empty, fall back to least-recently-Instagrammed category.
+    """
+    base_url = f"{SUPABASE_URL}/rest/v1/news_articles"
+
+    def _query(category: Optional[str]) -> List[Dict[str, Any]]:
+        params = {
+            "select": "id,slug,title,title_ja,excerpt,excerpt_ja,image,category,"
+                      "published_at,instagram_posted,instagram_caption,"
+                      "instagram_attempts",
+            "published": "eq.true",
+            "instagram_posted": "is.false",
+            "image": "neq.",
+            "order": "published_at.desc.nullslast,created_at.desc",
+            "limit": "50",
+        }
+        if category:
+            params["category"] = f"eq.{category}"
+        # Skip rows that have already failed too many times.
+        params["instagram_attempts"] = f"lt.{IG_MAX_RETRY_ATTEMPTS}"
+        r = requests.get(base_url, params=params, headers=_sb_headers(), timeout=HTTP_TIMEOUT)
+        r.raise_for_status()
+        return r.json()
+
+    today_cat = target_category_for_today()
+    log.info("Today's IG target category (weekday rotation): %s", today_cat)
+    pool = _query(today_cat)
+    if pool:
+        return pool[0]
+
+    log.info("No candidate for today's category — falling back to least-recently-posted.")
+    # Build per-category last-posted-at and pick the oldest.
+    last_by_cat: Dict[str, str] = {}
+    for cat in CATEGORIES:
+        rr = requests.get(
+            base_url,
+            params={
+                "select": "instagram_posted_at",
+                "category": f"eq.{cat}",
+                "instagram_posted": "is.true",
+                "order": "instagram_posted_at.desc.nullslast",
+                "limit": "1",
+            },
+            headers=_sb_headers(), timeout=HTTP_TIMEOUT,
+        )
+        if rr.ok and rr.json():
+            last_by_cat[cat] = rr.json()[0].get("instagram_posted_at") or ""
+
+    candidates = _query(None)
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda it: (
+            last_by_cat.get(it.get("category") or "industry", ""),
+            -_iso_epoch(it.get("published_at")),
+        )
+    )
+    return candidates[0]
+
+
+def _iso_epoch(s: Optional[str]) -> float:
+    if not s:
+        return 0.0
+    try:
+        return dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instagram Graph API
+# ─────────────────────────────────────────────────────────────────────────────
+
+class InstagramError(RuntimeError):
+    pass
+
+
+def _ig_url(path: str) -> str:
+    return f"https://graph.facebook.com/{IG_GRAPH_VERSION}/{path.lstrip('/')}"
+
+
+def ig_create_media(image_url: str, caption: str) -> str:
+    if not IG_USER_ID or not IG_ACCESS_TOKEN:
+        raise InstagramError("IG_USER_ID and IG_ACCESS_TOKEN must be set.")
+    r = requests.post(
+        _ig_url(f"{IG_USER_ID}/media"),
+        data={"image_url": image_url, "caption": caption,
+              "access_token": IG_ACCESS_TOKEN},
+        timeout=HTTP_TIMEOUT,
+    )
+    if not r.ok:
+        raise InstagramError(f"create_media failed: {r.status_code} {r.text[:400]}")
+    creation_id = r.json().get("id")
+    if not creation_id:
+        raise InstagramError(f"create_media returned no id: {r.text[:200]}")
+    return creation_id
+
+
+def ig_wait_ready(creation_id: str, max_wait_s: int = 60) -> None:
+    deadline = time.time() + max_wait_s
+    while time.time() < deadline:
+        r = requests.get(
+            _ig_url(creation_id),
+            params={"fields": "status_code", "access_token": IG_ACCESS_TOKEN},
+            timeout=HTTP_TIMEOUT,
+        )
+        if r.ok:
+            status = r.json().get("status_code")
+            if status == "FINISHED":
+                return
+            if status == "ERROR":
+                raise InstagramError(f"Container errored: {r.text[:400]}")
+        time.sleep(2)
+
+
+def ig_publish(creation_id: str) -> str:
+    r = requests.post(
+        _ig_url(f"{IG_USER_ID}/media_publish"),
+        data={"creation_id": creation_id, "access_token": IG_ACCESS_TOKEN},
+        timeout=HTTP_TIMEOUT,
+    )
+    if not r.ok:
+        raise InstagramError(f"media_publish failed: {r.status_code} {r.text[:400]}")
+    media_id = r.json().get("id")
+    if not media_id:
+        raise InstagramError(f"media_publish returned no id: {r.text[:200]}")
+    return media_id
+
+
+def build_ig_caption(title_en: str, body_en: str, fallback: str = "") -> str:
+    body = (body_en or fallback or "").strip()
+    parts = [title_en.strip()]
+    if body:
+        parts.append("")
+        parts.append(body)
+    parts.append("")
+    parts.append(" ".join(INSTAGRAM_HASHTAGS))
+    caption = "\n".join(parts).strip()
+    return caption[:2150]
+
+
+def refresh_long_lived_token() -> Optional[str]:
+    if not IG_ACCESS_TOKEN or not IG_APP_ID or not IG_APP_SECRET:
+        raise RuntimeError("IG_APP_ID, IG_APP_SECRET, IG_ACCESS_TOKEN must all be set.")
+    r = requests.get(
+        _ig_url("oauth/access_token"),
+        params={
+            "grant_type": "fb_exchange_token",
+            "client_id": IG_APP_ID,
+            "client_secret": IG_APP_SECRET,
+            "fb_exchange_token": IG_ACCESS_TOKEN,
+        },
+        timeout=HTTP_TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json()
+    new_token = data.get("access_token")
+    expires_in = data.get("expires_in")
+    log.info("New long-lived token (expires in %ss): %s", expires_in, new_token)
+    notify_slack(
+        f"Refreshed long-lived IG token (expires_in={expires_in}s). "
+        "Update `IG_ACCESS_TOKEN` in GitHub Secrets / .env.auto-post.",
+        level="info",
+    )
+    return new_token
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline steps
+# ─────────────────────────────────────────────────────────────────────────────
+
+def collect_articles() -> List[Dict[str, Any]]:
+    inserted: List[Dict[str, Any]] = []
+    seen_titles: set[str] = set()
+
+    for source in SOURCES:
+        if len(inserted) >= MAX_NEW_ARTICLES_PER_RUN:
+            break
+        log.info("Source: %s", source["name"])
+        try:
+            if "rss" in source:
+                entries = fetch_rss_entries(source["rss"])
+            else:
+                entries = extract_static_titles(source["url"])
+        except Exception as exc:
+            log.error("Fetch error for %s: %s", source["name"], exc)
+            continue
+
+        for entry in entries:
+            if len(inserted) >= MAX_NEW_ARTICLES_PER_RUN:
+                break
+            title = entry["title"]
+            link = entry["link"]
+            if not title or not link or title in seen_titles:
+                continue
+            seen_titles.add(title)
+
+            # Pre-check by slug (cheap) so we don't burn an OpenAI call on a
+            # known duplicate. The DB UNIQUE constraint is still the final guard
+            # (sb_insert_news handles 409 conflicts).
+            slug = slugify(title)
+            if sb_select_news({"slug": f"eq.{slug}"}, limit=1):
+                continue
+
+            page_text, og_image = fetch_page(link)
+            body_for_summary = page_text or entry.get("summary") or title
+            summary = summarise_bilingual(title, body_for_summary)
+            category = classify_category(source.get("category", ""), title, body_for_summary)
+
+            # Image strategy:
+            #   1) og:image from source → fetch + overlay logo + host on Supabase
+            #   2) else generate with DALL·E + overlay logo + host on Supabase
+            if og_image:
+                image_url = fetch_and_overlay_external(og_image)
+            else:
+                image_url = generate_image_for(summary["title_en"], category)
+
+            source_html_en = (
+                f"<p>Source: <a href=\"{link}\" target=\"_blank\" rel=\"noopener\">{link}</a></p>"
+            )
+            source_html_ja = (
+                f"<p>元記事: <a href=\"{link}\" target=\"_blank\" rel=\"noopener\">{link}</a></p>"
+            )
+
+            now_iso = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            row = {
+                "slug":               slug,
+                "title":              summary["title_en"],
+                "title_ja":           summary["title_ja"],
+                "excerpt":            summary["excerpt_en"],
+                "excerpt_ja":         summary["excerpt_ja"],
+                "content":            f"{summary['content_en']}\n{source_html_en}",
+                "content_ja":         f"{summary['content_ja']}\n{source_html_ja}",
+                "image":              image_url or "",
+                "category":           category,
+                "author":             NEWS_AUTHOR,
+                "tags":               list(DEFAULT_TAGS),
+                "published":          True,
+                "published_at":       now_iso,
+                "display_date":       now_iso,
+                "instagram_caption":  summary["caption_ig"],
+                "instagram_posted":   False,
+                "instagram_attempts": 0,
+            }
+            created = sb_insert_news(row)
+            if created:
+                log.info("Inserted: %s [%s]", slug, category)
+                inserted.append(created)
+    log.info("Collection complete — %d new articles.", len(inserted))
+    return inserted
+
+
+def post_one_to_instagram() -> Optional[str]:
+    if not IG_USER_ID or not IG_ACCESS_TOKEN:
+        msg = "Instagram credentials missing (IG_USER_ID / IG_ACCESS_TOKEN) — IG step skipped."
+        log.warning(msg)
+        notify_slack(msg, level="warning")
+        return None
+    item = pick_for_instagram()
+    if not item:
+        msg = "No queued article available for Instagram today."
+        log.info(msg)
+        notify_slack(msg, level="info")
+        return None
+
+    title_en = item.get("title") or ""
+    excerpt_en = item.get("excerpt") or ""
+    image_url = (item.get("image") or "").strip()
+    if not image_url:
+        msg = f"Article {item.get('slug')} has no image — skipping IG post."
+        log.warning(msg)
+        notify_slack(msg, level="warning")
+        return None
+    caption_field = item.get("instagram_caption") or excerpt_en
+    caption = build_ig_caption(title_en, caption_field)
+
+    # Increment attempts upfront so failed rows naturally back off.
+    attempts = int(item.get("instagram_attempts") or 0) + 1
+    sb_update_news(item["id"], {"instagram_attempts": attempts})
+
+    try:
+        creation_id = ig_create_media(image_url, caption)
+        ig_wait_ready(creation_id)
+        media_id = ig_publish(creation_id)
+    except InstagramError as exc:
+        log.error("Instagram publish failed for %s: %s", item.get("slug"), exc)
+        sb_update_news(item["id"], {"instagram_last_error": str(exc)[:500]})
+        notify_slack(
+            f"IG publish FAILED for `{item.get('slug')}` (attempt {attempts}/"
+            f"{IG_MAX_RETRY_ATTEMPTS}): {str(exc)[:500]}",
+            level="error",
+        )
+        return None
+    except Exception as exc:
+        log.exception("Unexpected error during IG publish")
+        sb_update_news(item["id"], {"instagram_last_error": str(exc)[:500]})
+        notify_slack(
+            f"IG publish CRASHED for `{item.get('slug')}`: ```{traceback.format_exc()[-1500:]}```",
+            level="error",
+        )
+        return None
+
+    now_iso = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    sb_update_news(item["id"], {
+        "instagram_posted":    True,
+        "instagram_post_id":   media_id,
+        "instagram_posted_at": now_iso,
+        "instagram_last_error": None,
+    })
+    log.info("Posted to Instagram: %s (media_id=%s)", item.get("slug"), media_id)
+    notify_slack(
+        f"Posted to Instagram: *{title_en}*  (category={item.get('category')}, "
+        f"slug=`{item.get('slug')}`, media_id={media_id})",
+        level="success",
+    )
+    return media_id
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="run",
+        choices=["collect", "instagram", "run", "refresh-token"],
+        help="What to do. Default 'run' = collect + one IG post.",
+    )
+    parser.add_argument("--verbose", "-v", action="store_true")
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+
+    try:
+        if args.mode == "refresh-token":
+            refresh_long_lived_token()
+            return 0
+        if args.mode in ("collect", "run"):
+            inserted = collect_articles()
+            if inserted:
+                notify_slack(
+                    f"Collected {len(inserted)} new article(s): "
+                    + ", ".join(f"`{a.get('slug')}` [{a.get('category')}]" for a in inserted),
+                    level="success",
+                )
+            else:
+                notify_slack("Collection ran — no new articles inserted.", level="info")
+        if args.mode in ("instagram", "run"):
+            post_one_to_instagram()
+        return 0
+    except Exception as exc:
+        log.exception("Fatal error")
+        notify_slack(
+            f"FATAL: {exc.__class__.__name__}: {exc}\n```{traceback.format_exc()[-1500:]}```",
+            level="error",
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,544 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes marquee-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@layer base {
+  :root {
+    /* Design system: #FFFFFF, #212121, #FF2636, #686968, #F8F9FA, #E5E5E5 — サイト全体で primary を統一 */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 13%;
+    --primary: 355 100% 57%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 120 1% 41%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 14% 98%;
+    --muted-foreground: 120 1% 41%;
+    --accent: 355 100% 57%;
+    --accent-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 355 100% 57%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --hero-overlay: 0 30% 10%;
+    --sidebar-background: 210 14% 98%;
+    --sidebar-foreground: 0 0% 13%;
+    --sidebar-primary: 355 100% 57%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 13%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 355 100% 57%;
+    --radius: 4px;
+  }
+
+  .dark {
+    --background: 0 0% 8%;
+    --foreground: 0 0% 92%;
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 92%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 92%;
+    --border: 0 0% 22%;
+    --input: 0 0% 22%;
+    --ring: 355 100% 57%;
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 0 0% 92%;
+    --sidebar-primary: 355 100% 57%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 16%;
+    --sidebar-accent-foreground: 0 0% 92%;
+    --sidebar-border: 0 0% 22%;
+    --sidebar-ring: 355 100% 57%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    max-width: 100vw;
+    /* Prevent long words/URLs from breaking layout and garbling text on mobile */
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-word;
+    /* var(--site-font) is injected by ThemeProvider; falls back to system stack */
+    font-family: var(--site-font, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Responsive container: no horizontal overflow on mobile */
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
+  /* Yu Mincho for Japanese text — overridden when admin picks a JP font */
+  :lang(ja),
+  [lang="ja"],
+  .lang-ja {
+    font-family: var(--site-font-ja, "Yu Mincho", "游明朝", "YuMincho", "ヒラギノ明朝 ProN", "Hiragino Mincho ProN",
+                 "HG明朝E", "MS P明朝", "MS PMincho", serif);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  /* Prevent images and embeds from causing horizontal overflow on mobile */
+  img {
+    max-width: 100%;
+    vertical-align: middle;
+  }
+  iframe, object, embed {
+    max-width: 100%;
+  }
+}
+
+@layer utilities {
+  .hero-gradient {
+    background: linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0.75) 0%,
+      rgba(0, 0, 0, 0.45) 60%,
+      rgba(0, 0, 0, 0.2) 100%
+    );
+  }
+  .whatsapp-gradient {
+    background: linear-gradient(135deg, #25D366 0%, #20bd5a 50%, #1da851 100%);
+    border-radius: 12px;
+    box-shadow:
+      0 3px 0 0 rgba(13, 138, 58, 0.9),
+      0 1px 0 rgba(255, 255, 255, 0.25) inset;
+  }
+  .whatsapp-gradient:hover {
+    box-shadow:
+      0 4px 0 0 rgba(13, 138, 58, 0.9),
+      0 1px 0 rgba(255, 255, 255, 0.25) inset;
+  }
+  .whatsapp-gradient:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 0 rgba(13, 138, 58, 0.9), 0 1px 0 rgba(255, 255, 255, 0.2) inset;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 ease-smooth;
+    transition-property: box-shadow, transform;
+  }
+  .card-hover:hover {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  }
+
+  /* Shokuzai-pro style: card lift on hover (subtle translateY + shadow) */
+  .card-lift {
+    @apply transition-all duration-300 ease-smooth;
+    transition-property: box-shadow, transform;
+  }
+  .card-lift:hover {
+    transform: translateY(-4px);
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.14),
+      0 0 0 1px hsl(var(--primary) / 0.1);
+  }
+
+  /* Section title with left accent (B2B portal style, like shokuzai-pro.com) */
+  .section-title {
+    @apply text-foreground font-bold tracking-tight;
+    border-left: 4px solid hsl(var(--primary));
+    padding-left: 1rem;
+  }
+
+  /* "View all" / もっと見る link: arrow slides right on hover */
+  .link-more {
+    @apply inline-flex items-center gap-1.5 font-semibold text-primary transition-all duration-300 ease-smooth;
+  }
+  .link-more:hover {
+    @apply text-primary/90;
+  }
+  /* Red "View all" buttons: text and arrow always white (no hover needed to see them) */
+  .link-more.bg-primary {
+    color: hsl(var(--primary-foreground));
+  }
+  .link-more.bg-primary:hover {
+    color: hsl(var(--primary-foreground));
+  }
+  .link-more .link-more-arrow {
+    @apply transition-transform duration-300 ease-smooth;
+  }
+  .link-more:hover .link-more-arrow {
+    transform: translateX(6px);
+  }
+
+  .tag-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary break-words;
+    transition:
+      transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.28s ease,
+      background-color 0.28s ease;
+  }
+  .tag-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 10px hsl(var(--primary) / 0.18);
+  }
+  .tag-badge-fixed {
+    @apply shrink-0;
+  }
+
+  .section-accent {
+    @apply border-l-4 border-primary pl-4;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  /* Smooth horizontal scroll on iOS */
+  .touch-pan-x {
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Safe area for notched devices (e.g. iPhone) */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+@layer base {
+  button:not([disabled]),
+  [role="button"]:not([disabled]) {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* 3D press effect for native buttons that don't use the Button component */
+  button:not([disabled]):active:not(.no-btn-3d),
+  [role="button"]:not([disabled]):active:not(.no-btn-3d) {
+    transform: translateY(2px);
+  }
+
+  .btn-3d {
+    box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.2), 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+  }
+  .btn-3d:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.2), 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  }
+
+  .btn-primary-hover:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(255, 38, 54, 0.35);
+  }
+}
+
+/* Safari: ensure touch targets and smooth scrolling; do NOT override gap (causes layout breakage) */
+
+/* Smoother hover (no card scale to avoid blurriness; image scale is on the image only) */
+.card-hover,
+.card-lift {
+  will-change: box-shadow, transform;
+}
+
+/* -webkit-backdrop-filter for Safari */
+.backdrop-blur-sm {
+  -webkit-backdrop-filter: blur(4px);
+}
+.backdrop-blur-md {
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Site-wide: prevent text distortion and breakage ──────────────────────── */
+.text-balance {
+  text-wrap: balance;
+}
+.break-words-safe {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+.truncate-safe {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Auth / Fashion-style animations ──────────────────────────────────────── */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes float-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes shimmer-line {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes input-glow {
+  0%, 100% { box-shadow: 0 0 0 1px hsl(var(--border)); }
+  50% { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.4); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.animate-fade-in-up-slow {
+  animation: fade-in-up 0.65s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.animate-fade-in-scale {
+  animation: fade-in-scale 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+/* Stagger delays for section/card reveal (shokuzai-pro style) */
+.reveal-stagger-0 { animation-delay: 0ms; }
+.reveal-stagger-1 { animation-delay: 80ms; }
+.reveal-stagger-2 { animation-delay: 160ms; }
+.reveal-stagger-3 { animation-delay: 240ms; }
+.reveal-stagger-4 { animation-delay: 320ms; }
+.reveal-stagger-5 { animation-delay: 400ms; }
+.reveal-stagger-6 { animation-delay: 480ms; }
+.reveal-stagger-7 { animation-delay: 560ms; }
+.reveal-stagger-8 { animation-delay: 640ms; }
+.reveal-stagger-9 { animation-delay: 720ms; }
+.reveal-stagger-10 { animation-delay: 800ms; }
+
+.animate-float-subtle {
+  animation: float-subtle 4s ease-in-out infinite;
+}
+.animate-stagger-1 { animation-delay: 0.05s; }
+.animate-stagger-2 { animation-delay: 0.1s; }
+.animate-stagger-3 { animation-delay: 0.15s; }
+.animate-stagger-4 { animation-delay: 0.2s; }
+.animate-stagger-5 { animation-delay: 0.25s; }
+.animate-stagger-6 { animation-delay: 0.3s; }
+.animate-stagger-7 { animation-delay: 0.35s; }
+.animate-stagger-8 { animation-delay: 0.4s; }
+.animate-stagger-9 { animation-delay: 0.45s; }
+.animate-stagger-10 { animation-delay: 0.5s; }
+.opacity-0-init {
+  opacity: 0;
+}
+
+/* ── Grid stagger (supplier / marketplace listings) ─────────────────────── */
+@keyframes grid-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-grid-item-in {
+  opacity: 0;
+  animation: grid-item-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--grid-delay, 0ms);
+}
+
+/* ── Hero: soft professional fade (clean + slight upward motion) ─────────── */
+@keyframes hero-soft-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-hero-soft {
+  opacity: 0;
+  animation: hero-soft-in 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Section headings on scroll / page load ─────────────────────────────── */
+@keyframes section-heading-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.section-heading-enter {
+  opacity: 0;
+  animation: section-heading-fade 0.62s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Mobile filter drawer + backdrop ─────────────────────────────────────── */
+@keyframes filter-drawer-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0.92;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes filter-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-filter-backdrop {
+  animation: filter-backdrop-in 0.28s ease-out forwards;
+}
+.animate-filter-drawer {
+  animation: filter-drawer-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Filter / form controls: quick category-style transition ───────────── */
+.ui-filter-control {
+  transition:
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    background-color 0.22s ease,
+    transform 0.2s ease;
+}
+.ui-filter-control:hover {
+  border-color: hsl(var(--primary) / 0.35);
+}
+.ui-filter-control:focus {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12);
+}
+
+/* ── Premium card: subtle shimmer across badge ──────────────────────────── */
+@keyframes premium-shimmer {
+  0% { background-position: -150% 50%; }
+  100% { background-position: 250% 50%; }
+}
+.premium-badge-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.premium-badge-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.45) 45%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0.45) 55%,
+    transparent 65%
+  );
+  background-size: 200% 100%;
+  animation: premium-shimmer 4s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ── Our Services (2-card home section): clean sans, match editorial cards ─ */
+.our-services-section h2,
+.our-services-section h3,
+.our-services-section p {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif !important;
+  letter-spacing: -0.02em;
+}
+.our-services-section h2 {
+  color: #000000;
+  font-weight: 700;
+}
+.our-services-section h3 {
+  color: #000000;
+  font-weight: 700;
+}
+.our-services-section p {
+  color: #666666;
+  font-weight: 400;
+}
+
+/* ── Accessibility: respect reduced motion ───────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-grid-item-in,
+  .animate-hero-soft,
+  .section-heading-enter,
+  .animate-fade-in-up,
+  .animate-fade-in-up-slow,
+  .animate-fade-in-scale,
+  .animate-float-subtle,
+  .animate-filter-backdrop,
+  .animate-filter-drawer,
+  .premium-badge-shimmer::after {
+    animation: none !important;
+    animation-delay: 0s !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .opacity-0-init {
+    opacity: 1 !important;
+  }
+  .card-lift:hover,
+  .card-hover:hover {
+    transform: none !important;
+  }
+}
