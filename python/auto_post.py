@@ -386,13 +386,13 @@ def sb_storage_upload(image_bytes: bytes, ext: str = "jpg") -> Optional[str]:
 # Article scraping
 # ─────────────────────────────────────────────────────────────────────────────
 
-def slugify(title: str) -> str:
-    """URL-safe slug with an 8-char title hash suffix.
+def slugify(title: str, when: Optional[dt.date] = None) -> str:
+    """URL-safe slug with a YYYYMMDD date suffix.
 
-    Same title → same slug → DB UNIQUE on news_articles.slug rejects duplicates.
-    The hash suffix is the dedup key referenced in the client spec
-    (“タイトル + 日付など”); a deterministic short hash works better than a date
-    because it also catches cross-day re-discoveries of the same story.
+    Implements the client spec "タイトル + 日付など" — the slug is the article
+    title plus the current date (Asia/Singapore).  Same title posted on the
+    same day → same slug → DB UNIQUE on news_articles.slug rejects the
+    duplicate insert.
     """
     normalized = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", normalized.lower()).strip("-")
@@ -401,8 +401,8 @@ def slugify(title: str) -> str:
         slug = "article"
     if len(slug) > 70:
         slug = slug[:70].rstrip("-")
-    h = hashlib.sha1(title.encode("utf-8")).hexdigest()[:8]
-    return f"{slug}-{h}"
+    date_str = (when or dt.datetime.now(SGT).date()).strftime("%Y%m%d")
+    return f"{slug}-{date_str}"
 
 
 def fetch_rss_entries(rss_url: str, limit: int = 8) -> List[Dict[str, str]]:
@@ -658,19 +658,14 @@ def fetch_and_overlay_external(image_url: str) -> Optional[str]:
 # Category routing & weekly rotation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def classify_category(source_category: str, title: str, body: str) -> str:
-    base = source_category if source_category in CATEGORIES else "industry"
-    text = f"{title} {body}".lower()
-    if any(k in text for k in ("sfa", "regulation", "licen", "compliance",
-                               "ministry", "policy", "ruling", "law")):
-        return "regulation"
-    if any(k in text for k in ("opens", "opening", "festival", "expo",
-                               "event", "gala", "popup", "pop-up")):
-        return "event"
-    if any(k in text for k in ("trend", "rising", "surge", "growth",
-                               "popularity", "plant-based")):
-        return "trend"
-    return base
+def classify_category(source_category: str) -> str:
+    """Assign the article category from the source's declared category.
+
+    Each entry in DEFAULT_SOURCES (and NEWS_SOURCES_JSON) carries one of
+    industry / regulation / trend / event — that mapping IS the category.
+    Anything unknown falls back to "industry".
+    """
+    return source_category if source_category in CATEGORIES else "industry"
 
 
 def target_category_for_today() -> str:
@@ -889,7 +884,7 @@ def collect_articles() -> List[Dict[str, Any]]:
             page_text, og_image = fetch_page(link)
             body_for_summary = page_text or entry.get("summary") or title
             summary = summarise_bilingual(title, body_for_summary)
-            category = classify_category(source.get("category", ""), title, body_for_summary)
+            category = classify_category(source.get("category", ""))
 
             # Image strategy:
             #   1) og:image from source → fetch + overlay logo + host on Supabase
