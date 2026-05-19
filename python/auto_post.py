@@ -425,6 +425,49 @@ def fetch_rss_entries(rss_url: str, limit: int = 8) -> List[Dict[str, str]]:
     return out
 
 
+# Image CDNs that serve Google News's generic logo placeholder. Any og:image
+# whose URL contains one of these is rejected so we fall back to DALL·E
+# generation instead of pinning the Google logo as the article's hero.
+_GOOGLE_NEWS_IMAGE_BLACKLIST = (
+    "news.google.com",
+    "lh3.googleusercontent.com",
+    "lh4.googleusercontent.com",
+    "lh5.googleusercontent.com",
+    "ssl.gstatic.com",
+)
+
+
+def resolve_google_news_url(url: str) -> str:
+    """Best-effort decode of a news.google.com/rss/articles/... redirect URL
+    to the original publisher URL.
+
+    Google News RSS encodes the source URL as base64url-wrapped protobuf in
+    the path. We don't parse the protobuf properly — we just decode the
+    base64 blob and pick the first http(s):// substring out of the bytes.
+    Returns the decoded URL on success, or the input URL on failure.
+    """
+    if "news.google.com" not in url:
+        return url
+    m = re.search(r"/articles/([^?/]+)", url)
+    if not m:
+        return url
+    encoded = m.group(1)
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        raw = base64.urlsafe_b64decode(padded)
+    except Exception as exc:
+        log.debug("Google News URL decode failed for %s: %s", url, exc)
+        return url
+    match = re.search(rb"https?://[\w./\-_%?=&#~+]+", raw)
+    if not match:
+        return url
+    candidate = match.group(0).decode("utf-8", errors="ignore")
+    # Strip any trailing protobuf garbage that may have slipped past the regex.
+    candidate = candidate.rstrip("\x00\x01\x02\x03\x12\x13")
+    log.debug("Resolved Google News URL: %s -> %s", url, candidate)
+    return candidate
+
+
 def fetch_page(url: str) -> Tuple[Optional[str], Optional[str]]:
     """Return (visible text, og:image URL) for the page, or (None, None)."""
     try:
@@ -434,9 +477,17 @@ def fetch_page(url: str) -> Tuple[Optional[str], Optional[str]]:
         log.warning("Failed to fetch %s: %s", url, exc)
         return None, None
     soup = BeautifulSoup(r.content, "html.parser")
-    og = soup.find("meta", attrs={"property": "og:image"}) or \
-         soup.find("meta", attrs={"name": "twitter:image"})
-    image = og["content"].strip() if og and og.get("content") else None
+    final_url = (r.url or url).lower()
+    image: Optional[str] = None
+    # Skip og:image extraction for Google News redirect pages — their og:image
+    # is the generic Google News logo, not the actual article photo.
+    if "news.google.com" not in final_url:
+        og = soup.find("meta", attrs={"property": "og:image"}) or \
+             soup.find("meta", attrs={"name": "twitter:image"})
+        if og and og.get("content"):
+            candidate = og["content"].strip()
+            if not any(b in candidate.lower() for b in _GOOGLE_NEWS_IMAGE_BLACKLIST):
+                image = candidate
     for el in soup(["script", "style", "header", "footer", "nav", "aside"]):
         el.extract()
     text = re.sub(r"\s+", " ", soup.get_text(separator=" ")).strip()
@@ -923,7 +974,10 @@ def collect_articles() -> List[Dict[str, Any]]:
             if sb_select_news({"slug": f"eq.{slug}"}, limit=1):
                 continue
 
-            page_text, og_image = fetch_page(link)
+            # Google News RSS gives us redirect URLs; try to recover the
+            # real publisher URL so og:image scraping finds the actual photo.
+            fetch_url = resolve_google_news_url(link)
+            page_text, og_image = fetch_page(fetch_url)
             body_for_summary = page_text or entry.get("summary") or title
             summary = summarise_bilingual(title, body_for_summary)
             category = classify_category(source.get("category", ""))
