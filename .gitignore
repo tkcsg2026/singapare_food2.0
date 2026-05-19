@@ -30,10 +30,10 @@ tsconfig.tsbuildinfo
 
 git-*.ps1
 
-# Local environment files (never commit real secrets — use .env.example as template)
+# Local environment files — keep secrets out of git. Each developer maintains
+# their own .env.local (see auto_post.py / the chatbot for the variables read).
 .env
 .env.*
-!.env.example
 
 # Python bytecode
 __pycache__/
