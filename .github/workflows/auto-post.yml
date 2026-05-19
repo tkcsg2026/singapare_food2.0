@@ -10,6 +10,11 @@ concurrency:
   group: auto-post
   cancel-in-progress: false
 
+# Opt actions/checkout + actions/setup-python into the Node.js 24 runtime
+# ahead of GitHub's 2026-06 forced switch (see GH changelog 2025-09-19).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   run:
     runs-on: ubuntu-latest
