@@ -26,14 +26,14 @@ Manual articles created from the admin dashboard are picked up by the same
 Instagram queue automatically — the picker only requires
 ``published = true AND image <> '' AND instagram_posted = false``.
 
-Run modes (CLI)
----------------
-    python auto_post.py collect         # scrape + summarise + insert news only
-    python auto_post.py instagram       # post the next queued article to IG
-    python auto_post.py run             # collect then instagram (daily default)
-    python auto_post.py refresh-token   # refresh the long-lived IG token
+Run modes (CLI) — invoke from the repository root
+-------------------------------------------------
+    python python/auto_post.py collect         # scrape + summarise + insert news only
+    python python/auto_post.py instagram       # post the next queued article to IG
+    python python/auto_post.py run             # collect then instagram (daily default)
+    python python/auto_post.py refresh-token   # refresh the long-lived IG token
 
-Required environment variables — see ``.env.auto-post.example``.
+Required environment variables — see ``.env.example`` at the repo root.
 """
 
 from __future__ import annotations
@@ -199,9 +199,22 @@ BRAND_LOGO_SRC = os.environ.get("BRAND_LOGO_SRC", "public/icon.png")
 LOGO_OVERLAY_ENABLED = os.environ.get("LOGO_OVERLAY_ENABLED", "true").lower() == "true"
 
 # ── News sources ────────────────────────────────────────────────────────────
-# RSS feeds rotate fresh stories; the static URLs come from the original
-# client spec so high-signal regulator / industry pages are also covered.
-SOURCES: List[Dict[str, str]] = [
+# Default RSS feeds + static pages from the original client spec.  Each entry
+# can be overridden / extended via env vars (see below) without touching code:
+#
+#   • NEWS_SOURCES_JSON         — full JSON array, takes precedence if set.
+#   • NEWS_RSS_INDUSTRY         — single RSS URL (category=industry)
+#   • NEWS_RSS_EVENT            — single RSS URL (category=event)
+#   • NEWS_RSS_REGULATION       — single RSS URL (category=regulation)
+#   • NEWS_RSS_TREND            — single RSS URL (category=trend)
+#   • NEWS_URL_REGULATION       — single static URL (category=regulation)
+#   • NEWS_URL_EVENT            — single static URL (category=event)
+#   • NEWS_URL_TREND            — single static URL (category=trend)
+#
+# If an individual var is set it REPLACES the default for that slot; unset
+# vars keep the defaults below.  NEWS_SOURCES_JSON, if present and valid,
+# fully replaces everything (use for power-user setups).
+DEFAULT_SOURCES: List[Dict[str, str]] = [
     {"name": "GoogleNews – Singapore F&B",
      "rss": "https://news.google.com/rss/search?q=Singapore+food+beverage&hl=en-SG&gl=SG&ceid=SG:en",
      "category": "industry"},
@@ -214,7 +227,6 @@ SOURCES: List[Dict[str, str]] = [
     {"name": "GoogleNews – Singapore Food Trend",
      "rss": "https://news.google.com/rss/search?q=Singapore+food+trend&hl=en-SG&gl=SG&ceid=SG:en",
      "category": "trend"},
-    # Static high-signal pages (re-introduced from client spec).
     {"name": "SFA – SAFE Framework",
      "url": "https://www.sfa.gov.sg/food-for-thought/article/detail/safe-framework---strengthening-food-safety-together--one-grade-at-a-time",
      "category": "regulation"},
@@ -225,6 +237,44 @@ SOURCES: List[Dict[str, str]] = [
      "url": "https://danielfooddiary.com/category/singapore/",
      "category": "trend"},
 ]
+
+
+def _resolve_sources() -> List[Dict[str, str]]:
+    """Build the active SOURCES list, honoring env-var overrides."""
+    raw = os.environ.get("NEWS_SOURCES_JSON", "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list) and parsed:
+                return [s for s in parsed if isinstance(s, dict)]
+        except Exception as exc:
+            log.warning("NEWS_SOURCES_JSON parse failed (%s) — using defaults.", exc)
+
+    # Per-slot env overrides.  Slot key = ('rss'|'url', category).
+    overrides = {
+        ("rss", "industry"):   os.environ.get("NEWS_RSS_INDUSTRY", "").strip(),
+        ("rss", "event"):      os.environ.get("NEWS_RSS_EVENT", "").strip(),
+        ("rss", "regulation"): os.environ.get("NEWS_RSS_REGULATION", "").strip(),
+        ("rss", "trend"):      os.environ.get("NEWS_RSS_TREND", "").strip(),
+        ("url", "regulation"): os.environ.get("NEWS_URL_REGULATION", "").strip(),
+        ("url", "event"):      os.environ.get("NEWS_URL_EVENT", "").strip(),
+        ("url", "trend"):      os.environ.get("NEWS_URL_TREND", "").strip(),
+    }
+    out: List[Dict[str, str]] = []
+    for src in DEFAULT_SOURCES:
+        kind = "rss" if "rss" in src else "url"
+        key = (kind, src["category"])
+        override = overrides.get(key)
+        if override:
+            new = dict(src)
+            new[kind] = override
+            out.append(new)
+        else:
+            out.append(dict(src))
+    return out
+
+
+SOURCES: List[Dict[str, str]] = _resolve_sources()
 
 USER_AGENT = (
     "Mozilla/5.0 (compatible; KitchenConnectionBot/1.0; "

@@ -23,7 +23,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r python/requirements.txt
 
       - name: Run auto_post.py
         env:
@@ -39,4 +39,4 @@ jobs:
           MAX_NEW_ARTICLES_PER_RUN: "5"
           BRAND_LOGO_SRC: public/icon.png
           LOGO_OVERLAY_ENABLED: "true"
-        run: python auto_post.py run -v
+        run: python python/auto_post.py run -v
