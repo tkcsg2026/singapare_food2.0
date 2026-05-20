@@ -548,19 +548,36 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
-CONTENT_MAX_SENTENCES = 6
+CONTENT_MAX_SENTENCES = 10
 
 
-def _to_plain_text(text: str, max_sentences: int = CONTENT_MAX_SENTENCES) -> str:
-    """Strip HTML, collapse whitespace, cap at N sentences.
+def _to_plain_text(text: str, max_sentences: int = CONTENT_MAX_SENTENCES,
+                   preserve_paragraphs: bool = False) -> str:
+    """Strip HTML, normalize whitespace, cap at N sentences.
 
     Defensive cleanup applied to model output even though the prompt asks for
-    plain text — keeps the database free of stray <p>/<a> tags and runaway
-    paragraphs. Splits on English (.!?) and CJK (。！？) terminators.
+    plain text — keeps the database free of stray <p>/<a> tags. Splits on
+    English (.!?) and CJK (。！？) terminators. When ``preserve_paragraphs``
+    is true, blank-line breaks between paragraphs are kept and sentence count
+    is applied across the full text.
     """
     if not text:
         return ""
     text = re.sub(r"<[^>]+>", " ", text)
+    if preserve_paragraphs:
+        paragraphs = [re.sub(r"[ \t]+", " ", p).strip()
+                      for p in re.split(r"\n\s*\n", text)]
+        paragraphs = [p for p in paragraphs if p]
+        remaining = max_sentences
+        out: List[str] = []
+        for p in paragraphs:
+            if remaining <= 0:
+                break
+            sentences = re.split(r"(?<=[.!?。！？])\s+", p)
+            take = sentences[:remaining]
+            remaining -= len(take)
+            out.append(" ".join(take).strip())
+        return "\n\n".join(out).strip()
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return ""
@@ -586,28 +603,32 @@ def summarise_bilingual(title: str, body: str) -> Dict[str, str]:
         log.warning("OPENAI_API_KEY not set — using naive truncation.")
         return fallback
 
-    body_clipped = (body or "")[:6000]
+    body_clipped = (body or "")[:4000]
     prompt = (
-        "You are an editor for The Kitchen Connection, a Singapore F&B portal.\n"
-        "Given the source article below, return a strict JSON object with these keys:\n"
-        '  "title_en":   concise English title (<= 90 chars, no quotes)\n'
-        '  "title_ja":   日本語タイトル (90文字以内)\n'
-        '  "excerpt_en": one-sentence English excerpt (<= 160 chars)\n'
-        '  "excerpt_ja": 日本語1文要約 (160文字以内)\n'
-        f'  "content_en": plain text only, no HTML, no Markdown, no bullet points, '
-        f'AT MOST {CONTENT_MAX_SENTENCES} sentences\n'
-        f'  "content_ja": プレーンテキストのみ。HTMLやMarkdown、箇条書きは禁止。'
-        f'最大{CONTENT_MAX_SENTENCES}文\n'
-        '  "caption_ig": Instagram caption (English, plain text, <= 600 chars, no hashtags — appended later)\n'
-        "Do not include the source URL or any link in any field.\n"
-        "Stay factual. Do not invent details that are not in the source.\n\n"
-        f"SOURCE TITLE: {title}\n\nSOURCE BODY:\n{body_clipped}"
+        "Editor for The Kitchen Connection — a Singapore F&B B2B portal for "
+        "restaurants, hotels, cafes, suppliers, importers, distributors, "
+        "foodservice operators. Rewrite the source as an ORIGINAL summary; "
+        "do NOT copy phrasing. Prioritise relevance to Singapore F&B trade. "
+        "Skip gossip / pure-consumer angles. Stay factual; no invented facts; "
+        "no source URL.\n"
+        "Return strict JSON with these keys (plain text, no HTML/Markdown/bullets):\n"
+        '  title_en:   <=90 chars, SEO-aware\n'
+        '  title_ja:   <=90文字、自然な日本語\n'
+        '  excerpt_en: 2 sentences, <=160 chars\n'
+        '  excerpt_ja: 2文、<=160文字\n'
+        f'  content_en: ~{CONTENT_MAX_SENTENCES} sentences total, in 3 labelled '
+        'paragraphs separated by blank lines: "News Summary." / "Why It Matters '
+        'for Singapore F&B." / "Key Takeaway."\n'
+        f'  content_ja: 上記と同構成・同分量の自然な日本語（直訳禁止）\n'
+        '  caption_ig: pro B2B tone, <=500 chars, no hashtags (appended later)\n'
+        f"SOURCE TITLE: {title}\nSOURCE:\n{body_clipped}"
     )
     try:
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
+            temperature=0.3,
+            max_tokens=1200,
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
@@ -619,8 +640,8 @@ def summarise_bilingual(title: str, body: str) -> Dict[str, str]:
                 out[k] = v.strip()
         # Defensive: enforce plain-text + sentence cap on content fields even
         # if the model slipped HTML or extra paragraphs back in.
-        out["content_en"] = _to_plain_text(out["content_en"])
-        out["content_ja"] = _to_plain_text(out["content_ja"])
+        out["content_en"] = _to_plain_text(out["content_en"], preserve_paragraphs=True)
+        out["content_ja"] = _to_plain_text(out["content_ja"], preserve_paragraphs=True)
         out["excerpt_en"] = _to_plain_text(out["excerpt_en"], max_sentences=1)[:160]
         out["excerpt_ja"] = _to_plain_text(out["excerpt_ja"], max_sentences=1)[:160]
         out["caption_ig"] = _to_plain_text(out["caption_ig"], max_sentences=3)[:600]
