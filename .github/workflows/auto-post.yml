@@ -12,8 +12,11 @@ concurrency:
 
 # Opt actions/checkout + actions/setup-python into the Node.js 24 runtime
 # ahead of GitHub's 2026-06 forced switch (see GH changelog 2025-09-19).
+# TZ pins the runner's local clock to JST (UTC+9) so log timestamps and any
+# naive datetime.now() calls in auto_post.py render in Tokyo time.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TZ: Asia/Tokyo
 
 jobs:
   run:
