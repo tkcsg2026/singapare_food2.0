@@ -131,6 +131,12 @@ SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 NEWS_AUTHOR = os.environ.get("NEWS_AUTHOR", "Editorial Department")
 MAX_NEW_ARTICLES_PER_RUN = int(os.environ.get("MAX_NEW_ARTICLES_PER_RUN", "5"))
 
+# Freshness filter — RSS feeds occasionally re-surface older items, and Google
+# News searches can include long-tail results.  Articles older than this many
+# days are skipped during collection so we never publish stale news.  Set to 0
+# to disable the filter.
+NEWS_MAX_AGE_DAYS = int(os.environ.get("NEWS_MAX_AGE_DAYS", "30"))
+
 try:
     SGT = ZoneInfo("Asia/Singapore")
 except Exception:  # Windows without `tzdata` installed
@@ -220,32 +226,62 @@ LOGO_OVERLAY_ENABLED = os.environ.get("LOGO_OVERLAY_ENABLED", "true").lower() ==
 # If an individual var is set it REPLACES the default for that slot; unset
 # vars keep the defaults below.  NEWS_SOURCES_JSON, if present and valid,
 # fully replaces everything (use for power-user setups).
-DEFAULT_SOURCES: List[Dict[str, str]] = [
-    {"name": "GoogleNews – Singapore F&B",
-     "rss": "https://news.google.com/rss/search?q=Singapore+food+beverage&hl=en-SG&gl=SG&ceid=SG:en",
-     "category": "industry"},
-    {"name": "GoogleNews – Singapore Restaurants",
-     "rss": "https://news.google.com/rss/search?q=Singapore+restaurant+opening&hl=en-SG&gl=SG&ceid=SG:en",
-     "category": "event"},
-    {"name": "GoogleNews – SFA Singapore",
-     "rss": "https://news.google.com/rss/search?q=%22Singapore+Food+Agency%22&hl=en-SG&gl=SG&ceid=SG:en",
-     "category": "regulation"},
-    {"name": "GoogleNews – Singapore Food Trend",
-     "rss": "https://news.google.com/rss/search?q=Singapore+food+trend&hl=en-SG&gl=SG&ceid=SG:en",
+# Priority publications mandated by the client (project brief, 2026-05).  We
+# pull directly from each publisher's first-party RSS feed so we can verify in
+# the Slack notification exactly which publication every published article
+# came from — Google News searches were dropped because (a) they cannot be
+# audited per-publisher, (b) `site:` scoping returns 0 entries from a number
+# of regions, and (c) we kept seeing old re-surfaced items.
+#
+# The five priority sources are:
+#   1. Singapore Business Review – Food & Beverage   (sbr.com.sg)
+#   2. The Business Times – Singapore F&B            (businesstimes.com.sg)
+#   3. FoodNavigator Asia                            (foodnavigator-asia.com)
+#   4. Asia Food Journal                             (asiafoodjournal.com)
+#   5. Saladplate                                    (saladplate.com)
+#
+# SBR and BT publish broad cross-topic feeds, so we narrow them with the
+# optional ``keywords`` field — fetch_rss_entries() drops any entry whose
+# title+summary does not match at least one keyword.  Category routing for
+# the weekly Instagram rotation (industry / regulation / trend / event) is
+# split across these five publishers as below.
+FB_KEYWORDS = (
+    "food", "beverage", "restaurant", "f&b", "cafe", "café", "dining",
+    "chef", "hospitality", "hotel", "bar", "kitchen", "menu", "cuisine",
+    "fnb", "drink", "coffee", "tea", "bakery", "dessert", "catering",
+)
+REGULATION_KEYWORDS = (
+    "singapore food agency", "sfa", "food safety", "food regulation",
+    "licensing", "food licence", "food license", "compliance", "hygiene",
+    "halal", "food import", "labelling", "labeling",
+)
+
+DEFAULT_SOURCES: List[Dict[str, Any]] = [
+    {"name": "Singapore Business Review",
+     "rss": "https://sbr.com.sg/rss.xml",
+     "category": "industry",
+     "keywords": FB_KEYWORDS},
+    {"name": "The Business Times – Singapore",
+     "rss": "https://www.businesstimes.com.sg/rss/singapore",
+     "category": "industry",
+     "keywords": FB_KEYWORDS},
+    {"name": "The Business Times – Regulation",
+     "rss": "https://www.businesstimes.com.sg/rss/top-stories",
+     "category": "regulation",
+     "keywords": REGULATION_KEYWORDS},
+    {"name": "FoodNavigator Asia",
+     "rss": "https://www.foodnavigator-asia.com/arc/outboundfeeds/rss/",
      "category": "trend"},
-    {"name": "SFA – SAFE Framework",
-     "url": "https://www.sfa.gov.sg/food-for-thought/article/detail/safe-framework---strengthening-food-safety-together--one-grade-at-a-time",
-     "category": "regulation"},
-    {"name": "Time Out – New Restaurants",
-     "url": "https://www.timeout.com/singapore/restaurants/new-restaurants-in-singapore",
-     "category": "event"},
-    {"name": "Daniel Food Diary – Singapore",
-     "url": "https://danielfooddiary.com/category/singapore/",
+    {"name": "Asia Food Journal",
+     "rss": "https://asiafoodjournal.com/feed/",
      "category": "trend"},
+    {"name": "Saladplate",
+     "rss": "https://www.saladplate.com/feed/",
+     "category": "event"},
 ]
 
 
-def _resolve_sources() -> List[Dict[str, str]]:
+def _resolve_sources() -> List[Dict[str, Any]]:
     """Build the active SOURCES list, honoring env-var overrides."""
     raw = os.environ.get("NEWS_SOURCES_JSON", "").strip()
     if raw:
@@ -266,7 +302,7 @@ def _resolve_sources() -> List[Dict[str, str]]:
         ("url", "event"):      os.environ.get("NEWS_URL_EVENT", "").strip(),
         ("url", "trend"):      os.environ.get("NEWS_URL_TREND", "").strip(),
     }
-    out: List[Dict[str, str]] = []
+    out: List[Dict[str, Any]] = []
     for src in DEFAULT_SOURCES:
         kind = "rss" if "rss" in src else "url"
         key = (kind, src["category"])
@@ -280,7 +316,7 @@ def _resolve_sources() -> List[Dict[str, str]]:
     return out
 
 
-SOURCES: List[Dict[str, str]] = _resolve_sources()
+SOURCES: List[Dict[str, Any]] = _resolve_sources()
 
 USER_AGENT = (
     "Mozilla/5.0 (compatible; KitchenConnectionBot/1.0; "
@@ -411,18 +447,86 @@ def slugify(title: str, when: Optional[dt.date] = None) -> str:
     return f"{slug}-{date_str}"
 
 
-def fetch_rss_entries(rss_url: str, limit: int = 8) -> List[Dict[str, str]]:
+def _parse_entry_datetime(entry: Any) -> Optional[dt.datetime]:
+    """Best-effort parse of an feedparser entry's publish date to aware UTC.
+
+    feedparser exposes both a string (``published`` / ``updated``) and a
+    pre-parsed ``*_parsed`` struct_time.  Prefer the struct_time — it survives
+    odd timezone formats that dateutil can't always handle.
+    """
+    for key in ("published_parsed", "updated_parsed"):
+        st = entry.get(key) if isinstance(entry, dict) else getattr(entry, key, None)
+        if st:
+            try:
+                return dt.datetime(*st[:6], tzinfo=dt.timezone.utc)
+            except Exception:
+                pass
+    for key in ("published", "updated"):
+        raw = entry.get(key) if isinstance(entry, dict) else getattr(entry, key, None)
+        if not raw:
+            continue
+        try:
+            from email.utils import parsedate_to_datetime
+            parsed = parsedate_to_datetime(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt.timezone.utc)
+            return parsed.astimezone(dt.timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
+def fetch_rss_entries(rss_url: str, limit: int = 8,
+                      keywords: Optional[Tuple[str, ...]] = None) -> List[Dict[str, Any]]:
+    """Fetch an RSS feed and return entries sorted newest-first.
+
+    Entries with no parseable publish date land at the end; entries older than
+    NEWS_MAX_AGE_DAYS are dropped so stale items never reach the OpenAI step.
+    If ``keywords`` is provided, entries whose title+summary do not contain
+    any keyword (case-insensitive) are dropped — used to narrow broad feeds
+    (e.g. SBR / BT main feeds) down to F&B-relevant items.
+    """
     log.debug("Fetching RSS: %s", rss_url)
-    feed = feedparser.parse(rss_url)
-    out: List[Dict[str, str]] = []
-    for entry in feed.entries[:limit]:
+    feed = feedparser.parse(
+        rss_url,
+        agent="Mozilla/5.0 (compatible; KitchenConnectionBot/1.0; "
+              "+https://thekitchenconnection.sg)",
+    )
+    cutoff: Optional[dt.datetime] = None
+    if NEWS_MAX_AGE_DAYS > 0:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=NEWS_MAX_AGE_DAYS)
+    kw_patterns = None
+    if keywords:
+        # Word-boundary match so "bar" does not match "barrier" and "tea" does
+        # not match "team".  Multi-word phrases match as-is (still bounded).
+        kw_patterns = [
+            re.compile(r"(?<![A-Za-z0-9])" + re.escape(k.lower())
+                       + r"(?![A-Za-z0-9])")
+            for k in keywords
+        ]
+    out: List[Dict[str, Any]] = []
+    for entry in feed.entries:
+        title = (entry.get("title") or "").strip()
+        summary = (entry.get("summary") or entry.get("description") or "").strip()
+        if kw_patterns:
+            haystack = f"{title} {summary}".lower()
+            if not any(p.search(haystack) for p in kw_patterns):
+                continue
+        published_dt = _parse_entry_datetime(entry)
+        if cutoff is not None and published_dt is not None and published_dt < cutoff:
+            log.debug("Skipping stale entry (%s): %s",
+                      published_dt.isoformat(), title)
+            continue
         out.append({
-            "title": (entry.get("title") or "").strip(),
+            "title": title,
             "link": entry.get("link") or "",
-            "summary": (entry.get("summary") or entry.get("description") or "").strip(),
+            "summary": summary,
             "published": entry.get("published") or entry.get("updated") or "",
+            "_published_dt": published_dt,
         })
-    return out
+    out.sort(key=lambda e: e["_published_dt"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
+             reverse=True)
+    return out[:limit]
 
 
 # Image CDNs that serve Google News's generic logo placeholder. Any og:image
@@ -972,12 +1076,17 @@ def collect_articles() -> List[Dict[str, Any]]:
         log.info("Source: %s", source["name"])
         try:
             if "rss" in source:
-                entries = fetch_rss_entries(source["rss"])
+                entries = fetch_rss_entries(
+                    source["rss"],
+                    keywords=source.get("keywords") or None,
+                )
             else:
                 entries = extract_static_titles(source["url"])
         except Exception as exc:
             log.error("Fetch error for %s: %s", source["name"], exc)
             continue
+        if not entries:
+            log.info("Source %s returned 0 fresh entries.", source["name"])
 
         for entry in entries:
             if len(inserted) >= MAX_NEW_ARTICLES_PER_RUN:
@@ -1033,7 +1142,9 @@ def collect_articles() -> List[Dict[str, Any]]:
             }
             created = sb_insert_news(row)
             if created:
-                log.info("Inserted: %s [%s]", slug, category)
+                log.info("Inserted: %s [%s] from %s",
+                         slug, category, source.get("name", "?"))
+                created["_source_name"] = source.get("name", "")
                 inserted.append(created)
     log.info("Collection complete — %d new articles.", len(inserted))
     return inserted
@@ -1135,7 +1246,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             if inserted:
                 notify_slack(
                     f"Collected {len(inserted)} new article(s): "
-                    + ", ".join(f"`{a.get('slug')}` [{a.get('category')}]" for a in inserted),
+                    + ", ".join(
+                        f"`{a.get('slug')}` [{a.get('category')}] ← {a.get('_source_name') or '?'}"
+                        for a in inserted
+                    ),
                     level="success",
                 )
             else:
