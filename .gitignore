@@ -42,8 +42,5 @@ __pycache__/
 .venv/
 venv/
 
-# auto_post.py: keep secrets out of git. config.py holds API keys & DB
-# service-role token — do NOT commit. Use config.example.py as a template.
-python/config.py
 python/logs/
 

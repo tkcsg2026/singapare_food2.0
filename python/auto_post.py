@@ -7,7 +7,7 @@ Daily automation for The Kitchen Connection (singapore_food2.0).
 Pipeline
 --------
 1. Collect Singapore F&B stories from the RSS feeds listed in
-   ``config.NEWS_SOURCES``.
+   the hard-coded ``SOURCES`` list.
 2. Use OpenAI to produce a bilingual (EN / JA) summary, excerpt, body,
    SEO keywords, hashtags, EN+JA Instagram captions AND a one-line
    ``image_scene`` description for each story.
@@ -33,8 +33,9 @@ Run modes (CLI) — invoke from the repository root
     python python/auto_post.py run             # collect then instagram (daily default)
     python python/auto_post.py refresh-token   # refresh the long-lived IG token
 
-All configuration lives in ``python/config.py``.  No environment variables
-are read — edit ``config.py`` to change credentials, sources, or behaviour.
+Configuration is read from environment variables.  Locally, place secrets
+in ``.env.local`` at the repo root (loaded automatically via python-dotenv).
+On CI, GitHub Secrets provide the same variables.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -60,45 +62,98 @@ import requests
 from bs4 import BeautifulSoup
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Load configuration from python/config.py
+# Load configuration from environment variables (.env.local → os.environ)
 # ─────────────────────────────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config  # noqa: E402  — must follow sys.path append
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(REPO_ROOT / ".env.local")
 
-SUPABASE_URL = config.SUPABASE_URL.rstrip("/")
-SUPABASE_SERVICE_KEY = config.SUPABASE_SERVICE_KEY
-SUPABASE_STORAGE_BUCKET = config.SUPABASE_STORAGE_BUCKET
+def _env(name: str, default: str = "") -> str:
+    return os.environ.get(name, default)
 
-OPENAI_API_KEY = (config.OPENAI_API_KEY or "").strip()
-OPENAI_MODEL = config.OPENAI_MODEL
-OPENAI_IMAGE_MODEL = config.OPENAI_IMAGE_MODEL
-OPENAI_IMAGE_SIZE = config.OPENAI_IMAGE_SIZE
-OPENAI_IMAGE_QUALITY = getattr(config, "OPENAI_IMAGE_QUALITY", "high")
+SUPABASE_URL = _env("NEXT_PUBLIC_SUPABASE_URL").rstrip("/")
+SUPABASE_SERVICE_KEY = _env("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_STORAGE_BUCKET = _env("SUPABASE_NEWS_BUCKET", "logos")
 
-IG_USER_ID = config.IG_USER_ID
-IG_ACCESS_TOKEN = config.IG_ACCESS_TOKEN
-IG_APP_ID = config.IG_APP_ID
-IG_APP_SECRET = config.IG_APP_SECRET
-IG_GRAPH_VERSION = config.IG_GRAPH_VERSION
-IG_MAX_RETRY_ATTEMPTS = int(config.IG_MAX_RETRY_ATTEMPTS)
+OPENAI_API_KEY = _env("OPENAI_API_KEY").strip()
+OPENAI_MODEL = _env("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_IMAGE_MODEL = _env("OPENAI_IMAGE_MODEL", "gpt-image-1")
+OPENAI_IMAGE_SIZE = _env("OPENAI_IMAGE_SIZE", "1024x1024")
+OPENAI_IMAGE_QUALITY = _env("OPENAI_IMAGE_QUALITY", "high")
 
-SLACK_WEBHOOK_URL = config.SLACK_WEBHOOK_URL
+IG_USER_ID = _env("IG_USER_ID")
+IG_ACCESS_TOKEN = _env("IG_ACCESS_TOKEN")
+IG_APP_ID = _env("IG_APP_ID")
+IG_APP_SECRET = _env("IG_APP_SECRET")
+IG_GRAPH_VERSION = _env("IG_GRAPH_VERSION", "v21.0")
+IG_MAX_RETRY_ATTEMPTS = int(_env("IG_MAX_RETRY_ATTEMPTS", "3"))
 
-NEWS_AUTHOR = config.NEWS_AUTHOR
-MAX_NEW_ARTICLES_PER_RUN = int(config.MAX_NEW_ARTICLES_PER_RUN)
-NEWS_MAX_AGE_DAYS = int(config.NEWS_MAX_AGE_DAYS)
+SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL")
 
-BRAND_LOGO_SRC = config.BRAND_LOGO_SRC
-LOGO_OVERLAY_ENABLED = bool(config.LOGO_OVERLAY_ENABLED)
-LOGO_OVERLAY_WIDTH_RATIO = float(getattr(config, "LOGO_OVERLAY_WIDTH_RATIO", 0.11))
+NEWS_AUTHOR = _env("NEWS_AUTHOR", "Editorial Department")
+MAX_NEW_ARTICLES_PER_RUN = int(_env("MAX_NEW_ARTICLES_PER_RUN", "1"))
+NEWS_MAX_AGE_DAYS = int(_env("NEWS_MAX_AGE_DAYS", "30"))
 
-SOURCES: List[Dict[str, Any]] = list(config.NEWS_SOURCES)
-WEEKDAY_CATEGORY: Dict[int, str] = dict(config.WEEKDAY_CATEGORY)
-DEFAULT_TAGS: List[str] = list(config.DEFAULT_TAGS)
-FALLBACK_INSTAGRAM_HASHTAGS: List[str] = list(config.FALLBACK_INSTAGRAM_HASHTAGS)
+BRAND_LOGO_SRC = _env("BRAND_LOGO_SRC", "public/apple-touch-icon.png")
+LOGO_OVERLAY_ENABLED = _env("LOGO_OVERLAY_ENABLED", "true").lower() in ("true", "1", "yes")
+LOGO_OVERLAY_WIDTH_RATIO = float(_env("LOGO_OVERLAY_WIDTH_RATIO", "0.07"))
+
+_FB_KEYWORDS = (
+    "food", "beverage", "restaurant", "f&b", "cafe", "café", "dining",
+    "chef", "hospitality", "hotel", "bar", "kitchen", "menu", "cuisine",
+    "fnb", "drink", "coffee", "tea", "bakery", "dessert", "catering",
+)
+_REGULATION_KEYWORDS = (
+    "singapore food agency", "sfa", "food safety", "food regulation",
+    "licensing", "food licence", "food license", "compliance", "hygiene",
+    "halal", "food import", "labelling", "labeling",
+)
+
+SOURCES: List[Dict[str, Any]] = [
+    {"name": "Singapore Business Review",
+     "rss": "https://sbr.com.sg/rss.xml",
+     "category": "industry",
+     "keywords": _FB_KEYWORDS},
+    {"name": "The Business Times – Singapore",
+     "rss": "https://www.businesstimes.com.sg/rss/singapore",
+     "category": "industry",
+     "keywords": _FB_KEYWORDS},
+    {"name": "The Business Times – Regulation",
+     "rss": "https://www.businesstimes.com.sg/rss/top-stories",
+     "category": "regulation",
+     "keywords": _REGULATION_KEYWORDS},
+    {"name": "FoodNavigator Asia",
+     "rss": "https://www.foodnavigator-asia.com/arc/outboundfeeds/rss/",
+     "category": "trend"},
+    {"name": "Asia Food Journal",
+     "rss": "https://asiafoodjournal.com/feed/",
+     "category": "trend"},
+    {"name": "Saladplate",
+     "rss": "https://www.saladplate.com/feed/",
+     "category": "event"},
+]
+
+WEEKDAY_CATEGORY: Dict[int, str] = {
+    0: "industry",
+    1: "regulation",
+    2: "trend",
+    3: "industry",
+    4: "event",
+    5: "trend",
+    6: "industry",
+}
+
+DEFAULT_TAGS: List[str] = ["F&B News", "Singapore"]
+
+FALLBACK_INSTAGRAM_HASHTAGS: List[str] = [
+    "#SingaporeFNB",
+    "#SingaporeRestaurants",
+    "#SingaporeFood",
+    "#SingaporeBusiness",
+    "#SGFNB",
+]
 
 CATEGORIES = ("regulation", "trend", "event", "industry")
 
@@ -183,7 +238,7 @@ def notify_slack(text: str, level: str = "info") -> None:
 def _sb_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         raise RuntimeError(
-            "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in config.py."
+            "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env.local or environment."
         )
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
@@ -797,7 +852,7 @@ def _ig_url(path: str) -> str:
 
 def ig_create_media(image_url: str, caption: str) -> str:
     if not IG_USER_ID or not IG_ACCESS_TOKEN:
-        raise InstagramError("IG_USER_ID and IG_ACCESS_TOKEN must be set in config.py.")
+        raise InstagramError("IG_USER_ID and IG_ACCESS_TOKEN must be set in .env.local or environment.")
     r = requests.post(
         _ig_url(f"{IG_USER_ID}/media"),
         data={"image_url": image_url, "caption": caption,
@@ -860,7 +915,7 @@ def build_ig_caption(title_en: str, caption_body: str, hashtags: List[str]) -> s
 def refresh_long_lived_token() -> Optional[str]:
     if not IG_ACCESS_TOKEN or not IG_APP_ID or not IG_APP_SECRET:
         raise RuntimeError(
-            "IG_APP_ID, IG_APP_SECRET, IG_ACCESS_TOKEN must all be set in config.py."
+            "IG_APP_ID, IG_APP_SECRET, IG_ACCESS_TOKEN must all be set in .env.local or environment."
         )
     r = requests.get(
         _ig_url("oauth/access_token"),
@@ -879,7 +934,7 @@ def refresh_long_lived_token() -> Optional[str]:
     log.info("New long-lived token (expires in %ss): %s", expires_in, new_token)
     notify_slack(
         f"Refreshed long-lived IG token (expires_in={expires_in}s). "
-        "Update `IG_ACCESS_TOKEN` in config.py.",
+        "Update `IG_ACCESS_TOKEN` in .env.local or environment.",
         level="info",
     )
     return new_token
@@ -990,7 +1045,7 @@ def collect_articles() -> List[Dict[str, Any]]:
 
 def post_one_to_instagram() -> Optional[str]:
     if not IG_USER_ID or not IG_ACCESS_TOKEN:
-        msg = "Instagram credentials missing (config.IG_USER_ID / IG_ACCESS_TOKEN) — IG step skipped."
+        msg = "Instagram credentials missing (IG_USER_ID / IG_ACCESS_TOKEN) — IG step skipped."
         log.warning(msg)
         notify_slack(msg, level="warning")
         return None
