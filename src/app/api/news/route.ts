@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createAdminSupabaseClient, requireAdmin } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+
 const mockArticles = [
   { id: "1", slug: "singapore-food-safety-new-regulations-2025", title: "Singapore Introduces Stricter Food Safety Regulations for 2025", title_ja: "シンガポール、2025年に向けて食品安全規制を強化", excerpt: "The Singapore Food Agency (SFA) has announced a new set of food safety regulations set to take effect in Q2 2025, impacting all F&B establishments.", excerpt_ja: "シンガポール食品庁（SFA）は、2025年第2四半期から施行される新たな食品安全規制を発表しました。", content: "", content_ja: "", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&h=340&fit=crop", category: "regulation", author: "F&B Portal", published: true, created_at: "2025-01-15T08:00:00Z" },
   { id: "2", slug: "plant-based-food-trend-singapore-2025", title: "Plant-Based Food Market Surges in Singapore", title_ja: "シンガポールでプラントベース食品市場が急成長", excerpt: "Singapore's plant-based food sector is seeing record growth, with new local brands and international players entering the market.", excerpt_ja: "シンガポールのプラントベース食品セクターは記録的な成長を見せており、新しいローカルブランドや国際的な企業が市場に参入しています。", content: "", content_ja: "", image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&h=340&fit=crop", category: "trend", author: "F&B Portal", published: true, created_at: "2025-01-20T09:00:00Z" },

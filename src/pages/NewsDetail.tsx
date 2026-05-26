@@ -82,7 +82,7 @@ const NewsDetail = () => {
         <h1 className="text-3xl font-black tracking-tight mb-6">{displayTitle}</h1>
 
         <div className="prose prose-sm max-w-none text-muted-foreground leading-relaxed">
-          {content.split("\n").map((p: string, i: number) => (
+          {content.split("\n").filter((p: string) => p.trim()).map((p: string, i: number) => (
             <p key={i}>{p}</p>
           ))}
         </div>

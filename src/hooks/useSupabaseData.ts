@@ -12,7 +12,7 @@ export function useFetch<T>(url: string, deps: unknown[] = []) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(url, { signal });
+      const res = await fetch(url, { signal, cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
       if (signal?.aborted) return;

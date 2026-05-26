@@ -669,6 +669,19 @@ def _load_logo() -> Optional[bytes]:
     return _logo_cache or None
 
 
+def _to_jpeg(image_bytes: bytes) -> bytes:
+    """Convert arbitrary image bytes to JPEG.  Returns input unchanged on failure."""
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=92, optimize=True)
+        return out.getvalue()
+    except Exception as exc:
+        log.warning("JPEG conversion failed: %s — returning original bytes.", exc)
+        return image_bytes
+
+
 def overlay_brand_logo(image_bytes: bytes) -> bytes:
     """Composite the brand logo onto the bottom-right with a soft panel.
 
@@ -676,12 +689,13 @@ def overlay_brand_logo(image_bytes: bytes) -> bytes:
     small sizes.  The source logo should be at least 180 px wide
     (apple-touch-icon.png) — the favicon icon.png (~32 px) will look blurry
     no matter what we do.
+    Always returns JPEG bytes regardless of input format.
     """
     if not LOGO_OVERLAY_ENABLED:
-        return image_bytes
+        return _to_jpeg(image_bytes)
     logo_bytes = _load_logo()
     if not logo_bytes:
-        return image_bytes
+        return _to_jpeg(image_bytes)
     try:
         from PIL import Image, ImageFilter
         base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
@@ -716,8 +730,8 @@ def overlay_brand_logo(image_bytes: bytes) -> bytes:
         base.convert("RGB").save(out, format="JPEG", quality=92, optimize=True)
         return out.getvalue()
     except Exception as exc:
-        log.warning("Logo overlay failed (%s) — using base image.", exc)
-        return image_bytes
+        log.warning("Logo overlay failed (%s) — converting to JPEG without logo.", exc)
+        return _to_jpeg(image_bytes)
 
 
 def build_image_prompt(image_scene: str, category: str) -> str:
