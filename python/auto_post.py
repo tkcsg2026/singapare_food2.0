@@ -520,33 +520,23 @@ def _coerce_list(value: Any, *, prefix: str = "") -> List[str]:
     return out
 
 
-def summarise_bilingual(title: str, body: str, category: str) -> Dict[str, Any]:
+def summarise_bilingual(title: str, body: str, category: str) -> Optional[Dict[str, Any]]:
     """Produce the full bilingual editorial package for a story.
 
     Returns a dict with:
         title_en, title_ja, excerpt_en, excerpt_ja, content_en, content_ja,
         caption_en, caption_ja, seo_keywords (list), hashtags (list),
         image_scene (single sentence).
+
+    Returns None if OpenAI is unavailable or fails — callers should skip the
+    article rather than inserting English-only fallback data.
     """
     client = _openai()
     fallback_scene = CATEGORY_FALLBACK_SCENE.get(category) \
         or CATEGORY_FALLBACK_SCENE["industry"]
-    fallback: Dict[str, Any] = {
-        "title_en":     title.strip(),
-        "title_ja":     title.strip(),
-        "excerpt_en":   _to_plain_text(body or title, max_sentences=1)[:160],
-        "excerpt_ja":   _to_plain_text(body or title, max_sentences=1)[:160],
-        "content_en":   _to_plain_text(body or title),
-        "content_ja":   _to_plain_text(body or title),
-        "caption_en":   _to_plain_text(body or title, max_sentences=3)[:500],
-        "caption_ja":   _to_plain_text(body or title, max_sentences=3)[:500],
-        "seo_keywords": ["Singapore F&B", "food and beverage", "hospitality"],
-        "hashtags":     list(FALLBACK_INSTAGRAM_HASHTAGS),
-        "image_scene":  fallback_scene,
-    }
     if client is None:
-        log.warning("OPENAI_API_KEY not set — using naive fallback.")
-        return fallback
+        log.warning("OPENAI_API_KEY not set — skipping article (no fallback inserted).")
+        return None
 
     body_clipped = (body or "")[:4000]
     prompt = (
@@ -599,7 +589,19 @@ def summarise_bilingual(title: str, body: str, category: str) -> Dict[str, Any]:
         raw = resp.choices[0].message.content or "{}"
         data = json.loads(_strip_code_fences(raw))
 
-        out: Dict[str, Any] = dict(fallback)
+        out: Dict[str, Any] = {
+            "title_en":     title.strip(),
+            "title_ja":     title.strip(),
+            "excerpt_en":   "",
+            "excerpt_ja":   "",
+            "content_en":   "",
+            "content_ja":   "",
+            "caption_en":   "",
+            "caption_ja":   "",
+            "seo_keywords": ["Singapore F&B", "food and beverage", "hospitality"],
+            "hashtags":     list(FALLBACK_INSTAGRAM_HASHTAGS),
+            "image_scene":  fallback_scene,
+        }
         for k in ("title_en", "title_ja", "excerpt_en", "excerpt_ja",
                   "content_en", "content_ja", "caption_en", "caption_ja",
                   "image_scene"):
@@ -631,7 +633,7 @@ def summarise_bilingual(title: str, body: str, category: str) -> Dict[str, Any]:
         return out
     except Exception as exc:
         log.error("OpenAI summarisation failed: %s", exc)
-        return fallback
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -990,6 +992,13 @@ def collect_articles() -> List[Dict[str, Any]]:
             category = classify_category(source.get("category", ""))
 
             summary = summarise_bilingual(title, body_for_summary, category)
+            if summary is None:
+                log.warning("Skipping '%s' — OpenAI unavailable or failed.", title)
+                notify_slack(
+                    f"Skipping article (OpenAI failed): _{title[:80]}_",
+                    level="warning",
+                )
+                continue
 
             # Image strategy (per client brief 2026-05): ALWAYS generate a new
             # editorial photograph from the article's scene description.  The
@@ -1115,6 +1124,68 @@ def post_one_to_instagram() -> Optional[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Repair — re-run AI for an existing article that was stored with bad/fallback data
+# ─────────────────────────────────────────────────────────────────────────────
+
+def repair_article(slug: str) -> bool:
+    """Re-run OpenAI summarisation + image generation for an existing DB record.
+
+    Use this to fix articles that were inserted with fallback (English-only,
+    unsummarised) data due to a transient OpenAI failure.  The existing
+    ``content`` field is used as the source text for re-summarisation.
+    """
+    rows = sb_select_news(
+        {"slug": f"eq.{slug}"},
+        limit=1,
+        select="id,title,content,category",
+    )
+    if not rows:
+        log.error("Article not found in DB: %s", slug)
+        return False
+
+    article = rows[0]
+    article_id = article["id"]
+    title = article.get("title") or ""
+    content = article.get("content") or ""
+    category = article.get("category") or "industry"
+
+    log.info("Repairing: %s (category=%s)", slug, category)
+    summary = summarise_bilingual(title, content, category)
+    if summary is None:
+        log.error("Repair failed — OpenAI unavailable or failed for: %s", slug)
+        return False
+
+    image_url = generate_image_for(summary["image_scene"], category)
+    if not image_url:
+        log.warning("Image generation failed for repair of: %s — keeping existing image.", slug)
+
+    ig_caption_body = f"{summary['caption_en']}\n\n{summary['caption_ja']}".strip()
+    ig_caption_body_with_tags = (
+        f"{ig_caption_body}\n\n{_hashtags_to_caption_tail(summary['hashtags'])}"
+    ).strip()
+
+    patch: Dict[str, Any] = {
+        "title":             summary["title_en"],
+        "title_ja":          summary["title_ja"],
+        "excerpt":           summary["excerpt_en"],
+        "excerpt_ja":        summary["excerpt_ja"],
+        "content":           summary["content_en"],
+        "content_ja":        summary["content_ja"],
+        "instagram_caption": ig_caption_body_with_tags,
+    }
+    if image_url:
+        patch["image"] = image_url
+
+    sb_update_news(article_id, patch)
+    log.info("Repair complete: %s (image=%s)", slug, "yes" if image_url else "no (unchanged)")
+    notify_slack(
+        f"Repaired article `{slug}` — image={'regenerated' if image_url else 'unchanged'}.",
+        level="success",
+    )
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1124,10 +1195,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         "mode",
         nargs="?",
         default="run",
-        choices=["collect", "instagram", "run", "refresh-token"],
+        choices=["collect", "instagram", "run", "refresh-token", "repair"],
         help="What to do. Default 'run' = collect + one IG post.",
     )
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument(
+        "--slug",
+        metavar="SLUG",
+        help="Slug of the article to repair (required for 'repair' mode).",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -1136,6 +1212,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     try:
+        if args.mode == "repair":
+            if not args.slug:
+                log.error("repair mode requires --slug SLUG")
+                return 2
+            ok = repair_article(args.slug)
+            return 0 if ok else 1
         if args.mode == "refresh-token":
             refresh_long_lived_token()
             return 0
