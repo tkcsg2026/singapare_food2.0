@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { jsonWithPublicCache } from "@/lib/api-cache";
 import { suppliers as mockSuppliers } from "@/data/mockData";
 import { countSuppliersByPlan } from "@/lib/plans";
 
@@ -7,7 +7,7 @@ import { countSuppliersByPlan } from "@/lib/plans";
 export async function GET() {
   const supabase = createServerSupabaseClient();
   if (!supabase) {
-    return NextResponse.json(countSuppliersByPlan(mockSuppliers));
+    return jsonWithPublicCache(countSuppliersByPlan(mockSuppliers));
   }
 
   const { count: total, error: errTotal } = await supabase
@@ -26,11 +26,11 @@ export async function GET() {
     .eq("plan", "standard");
 
   if (errTotal || errP || errS || total == null) {
-    return NextResponse.json(countSuppliersByPlan(mockSuppliers));
+    return jsonWithPublicCache(countSuppliersByPlan(mockSuppliers));
   }
 
   const basic = Math.max(0, total - (premium ?? 0) - (standard ?? 0));
-  return NextResponse.json({
+  return jsonWithPublicCache({
     premium: premium ?? 0,
     standard: standard ?? 0,
     basic,

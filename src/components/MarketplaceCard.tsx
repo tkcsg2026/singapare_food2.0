@@ -14,9 +14,10 @@ interface MarketplaceCardProps {
     condition_en?: string;
   };
   onRequireLogin?: () => boolean;
+  lazyImage?: boolean;
 }
 
-export function MarketplaceCard({ item, onRequireLogin }: MarketplaceCardProps) {
+export function MarketplaceCard({ item, onRequireLogin, lazyImage = false }: MarketplaceCardProps) {
   const { t, lang } = useTranslation();
   const mkt = t.marketplace as {
     areaDisplay?: Record<string, string>;
@@ -44,6 +45,8 @@ export function MarketplaceCard({ item, onRequireLogin }: MarketplaceCardProps) 
           <img
             src={item.image}
             alt={displayTitle}
+            loading={lazyImage ? "lazy" : undefined}
+            decoding="async"
             className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.07]"
           />
         </div>

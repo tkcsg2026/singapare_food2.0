@@ -41,6 +41,8 @@ interface SupplierCardProps {
   tagDisplayMaps?: SupplierTagDisplayMaps;
   /** @deprecated use tagDisplayMaps */
   tagLabelMap?: Record<string, string>;
+  /** When true, defer off-screen logo loading (home page). */
+  lazyImage?: boolean;
 }
 
 function PlanBadge({ plan, lang }: { plan?: string | null; lang: string }) {
@@ -90,7 +92,7 @@ function useFavorites() {
   return { favorites, toggle: toggleFavorite };
 }
 
-export function SupplierCard({ supplier, variant = "grid", rank, tagDisplayMaps, tagLabelMap }: SupplierCardProps) {
+export function SupplierCard({ supplier, variant = "grid", rank, tagDisplayMaps, tagLabelMap, lazyImage = false }: SupplierCardProps) {
   const { t, lang } = useTranslation();
   const cfg = getPlanConfig(supplier.plan);
   const { favorites, toggle } = useFavorites();
@@ -133,6 +135,8 @@ export function SupplierCard({ supplier, variant = "grid", rank, tagDisplayMaps,
           <img
             src={supplier.logo}
             alt={displayName}
+            loading={lazyImage ? "lazy" : undefined}
+            decoding="async"
             className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.06]"
           />
         </Link>

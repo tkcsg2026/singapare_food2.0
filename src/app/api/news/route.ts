@@ -26,16 +26,25 @@ const mockArticles = [
   { id: "20", slug: "chef-talent-shortage-singapore-hospitality", title: "Singapore Hospitality Sector Faces Ongoing Chef Talent Shortage", title_ja: "シンガポールのホスピタリティ業界、シェフ不足が続く", excerpt: "A survey by the Restaurant Association of Singapore highlights a persistent shortage of trained chefs, with restaurants calling for enhanced culinary training programmes.", excerpt_ja: "シンガポール・レストラン協会の調査が、訓練を受けたシェフの慢性的な不足を浮き彫りにし、レストランが充実した料理訓練プログラムを求めています。", content: "", content_ja: "", image: "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=600&h=340&fit=crop", category: "industry", author: "F&B Portal", published: true, created_at: "2025-04-25T10:00:00Z" },
 ];
 
+function parseLimit(raw: string | null, max = 100): number | null {
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.min(max, Math.floor(n));
+}
+
 export async function GET(req: NextRequest) {
   const supabase = createServerSupabaseClient();
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category");
   const all = searchParams.get("all");
+  const limit = parseLimit(searchParams.get("limit"));
 
   if (!supabase) {
     let result = [...mockArticles].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     if (!all) result = result.filter((a) => a.published);
     if (category) result = result.filter((a) => a.category === category);
+    if (limit) result = result.slice(0, limit);
     return NextResponse.json(result);
   }
 
@@ -62,12 +71,13 @@ export async function GET(req: NextRequest) {
   query = query.eq("published", true);
   if (category) query = query.eq("category", category);
   query = query.order("created_at", { ascending: false });
+  if (limit) query = query.limit(limit * 2);
 
   const { data, error } = await query;
   if (error) return NextResponse.json([]);
   const items = (data ?? []) as Array<{ published_at?: string | null; created_at: string }>;
   items.sort((a, b) => new Date(b.published_at || b.created_at).getTime() - new Date(a.published_at || a.created_at).getTime());
-  return NextResponse.json(items);
+  return NextResponse.json(limit ? items.slice(0, limit) : items);
 }
 
 export async function POST(req: NextRequest) {

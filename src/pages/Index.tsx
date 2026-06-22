@@ -10,12 +10,13 @@ import Layout from "@/components/Layout";
 import { SupplierCard } from "@/components/SupplierCard";
 import { MarketplaceCard } from "@/components/MarketplaceCard";
 import { useFetch } from "@/hooks/useSupabaseData";
+import { useInView } from "@/hooks/useInView";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { AnimatedGridItem } from "@/components/AnimatedGridItem";
-import { takeHomeSuppliers } from "@/lib/plans";
 import type { PlanCounts } from "@/lib/plans";
 import { buildSupplierTagDisplayMaps, getCategoryDisplayName } from "@/lib/category-display";
+import type { HomePagePayload } from "@/types/home";
 import type { SupplierRow, MarketplaceItemRow, CategoryRow, NewsArticleRow, JobNoticeRow } from "@/types/database";
 
 function SupplierSkeleton() {
@@ -41,6 +42,52 @@ function SupplierSkeleton() {
   );
 }
 
+function DeferredPromoVideo({ url, lang }: { url: string; lang: string }) {
+  const { ref, inView } = useInView<HTMLDivElement>("320px 0px");
+  const ytId = url
+    ? (url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/) || [])[1]
+    : null;
+
+  return (
+    <div ref={ref} className="mt-8 md:mt-10 opacity-0-init animate-fade-in-up reveal-stagger-3">
+      {!url ? (
+        <div className="rounded-2xl border-2 border-dashed border-border bg-white aspect-video flex flex-col items-center justify-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <Play className="h-7 w-7 text-primary ml-1" />
+          </div>
+          <p className="text-sm text-muted-foreground font-medium">
+            {lang === "ja" ? "紹介動画（準備中）" : "Introduction video coming soon"}
+          </p>
+        </div>
+      ) : !inView ? (
+        <div className="rounded-2xl overflow-hidden shadow-lg bg-muted aspect-video flex items-center justify-center">
+          <Play className="h-10 w-10 text-muted-foreground/50" />
+        </div>
+      ) : (
+        <div className="rounded-2xl overflow-hidden shadow-lg bg-black aspect-video">
+          {ytId ? (
+            <iframe
+              src={`https://www.youtube.com/embed/${ytId}`}
+              className="w-full h-full"
+              loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title="Promo video"
+            />
+          ) : (
+            <video
+              src={url}
+              controls
+              preload="none"
+              className="w-full h-full object-contain"
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -62,42 +109,21 @@ const Index = () => {
     }
   }, []);
 
-  const { data: suppliers, loading: suppliersLoading } = useFetch<SupplierRow[]>("/api/suppliers");
-  const { data: planCountsData } = useFetch<PlanCounts>("/api/suppliers/plan-counts");
-  const planCounts: PlanCounts = planCountsData ?? { premium: 0, standard: 0, basic: 0 };
-  const { data: marketplaceItems } = useFetch<MarketplaceItemRow[]>("/api/marketplace");
-  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=supplier");
-  const { data: tagCategories } = useFetch<CategoryRow[]>("/api/categories?type=tag");
-  const { data: newsArticles } = useFetch<NewsArticleRow[]>("/api/news");
-  const { data: jobNotices } = useFetch<JobNoticeRow[]>("/api/job-notices?limit=50");
-  const { data: promoVideoSetting } = useFetch<{ value?: string }>("/api/settings?key=promo_video_url");
-  const promoVideoUrl: string = (promoVideoSetting as any)?.value?.trim() || "";
+  const { data: homeData, loading: homeLoading } = useFetch<HomePagePayload>("/api/home", [], {
+    cache: "default",
+  });
 
-  const tagDisplayMaps = useMemo(() => buildSupplierTagDisplayMaps(tagCategories || []), [tagCategories]);
-  const popularSuppliers = useMemo(() => takeHomeSuppliers(suppliers || []), [suppliers]);
-  const recentItems = (marketplaceItems || []).slice(0, 6);
-  const latestNews = useMemo(
-    () =>
-      [...(newsArticles || [])]
-        .sort((a, b) => {
-          const da = (a as { published_at?: string }).published_at || a.created_at;
-          const db = (b as { published_at?: string }).published_at || b.created_at;
-          return new Date(db).getTime() - new Date(da).getTime();
-        })
-        .slice(0, 5),
-    [newsArticles]
-  );
-  const latestJobNotices = useMemo(
-    () =>
-      [...(jobNotices || [])]
-        .filter((n) => (n.post_type ?? "job") === "job")
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 3),
-    [jobNotices]
-  );
+  const planCounts: PlanCounts = homeData?.planCounts ?? { premium: 0, standard: 0, basic: 0 };
+  const popularSuppliers: SupplierRow[] = homeData?.suppliers ?? [];
+  const recentItems: MarketplaceItemRow[] = homeData?.marketplace ?? [];
+  const latestNews: NewsArticleRow[] = homeData?.news ?? [];
+  const latestJobNotices: JobNoticeRow[] = homeData?.jobs ?? [];
+  const categories: CategoryRow[] = homeData?.categories ?? [];
+  const tagCategories: CategoryRow[] = homeData?.tagCategories ?? [];
+  const promoVideoUrl = homeData?.promoVideoUrl ?? "";
+  const featuredLinks = homeData?.links ?? [];
 
-  const { data: linksData } = useFetch<any[]>("/api/links");
-  const featuredLinks = linksData || [];
+  const tagDisplayMaps = useMemo(() => buildSupplierTagDisplayMaps(tagCategories), [tagCategories]);
   const [failedLinkImages, setFailedLinkImages] = useState<Record<string, boolean>>({});
   const isMobile = useIsMobile();
   const VISIBLE = isMobile ? 1 : 3;
@@ -142,7 +168,14 @@ const Index = () => {
       {/* Hero */}
       <section className="relative min-h-[480px] md:min-h-[520px] flex items-center overflow-hidden w-full">
         <div className="absolute inset-0">
-          <img src="/hero-bg.jpg" alt="" className="w-full h-full object-cover" />
+          <img
+            src="/hero-bg.jpg"
+            alt=""
+            className="w-full h-full object-cover"
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+          />
           <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/55 to-black/25" />
         </div>
         <div className="container relative z-10 pt-6 sm:pt-8 md:pt-10 pb-10 sm:pb-14 md:pb-20 w-full min-w-0">
@@ -279,45 +312,7 @@ const Index = () => {
             </Link>
           </div>
 
-          {/* Promo video — shown when set in admin, placeholder otherwise */}
-          {(() => {
-            const ytId = promoVideoUrl
-              ? (promoVideoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/) || [])[1]
-              : null;
-            const isFile = promoVideoUrl && !ytId;
-            return (
-              <div className="mt-8 md:mt-10 opacity-0-init animate-fade-in-up reveal-stagger-3">
-                {promoVideoUrl ? (
-                  <div className="rounded-2xl overflow-hidden shadow-lg bg-black aspect-video">
-                    {ytId ? (
-                      <iframe
-                        src={`https://www.youtube.com/embed/${ytId}`}
-                        className="w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        title="Promo video"
-                      />
-                    ) : (
-                      <video
-                        src={promoVideoUrl}
-                        controls
-                        className="w-full h-full object-contain"
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border-2 border-dashed border-border bg-white aspect-video flex flex-col items-center justify-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Play className="h-7 w-7 text-primary ml-1" />
-                    </div>
-                    <p className="text-sm text-muted-foreground font-medium">
-                      {lang === "ja" ? "紹介動画（準備中）" : "Introduction video coming soon"}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <DeferredPromoVideo url={promoVideoUrl} lang={lang} />
         </div>
       </section>
 
@@ -378,11 +373,11 @@ const Index = () => {
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 min-w-0">
-          {suppliersLoading
+          {homeLoading
             ? Array.from({ length: 18 }).map((_, i) => <SupplierSkeleton key={i} />)
             : popularSuppliers.map((s, i) => (
                 <AnimatedGridItem key={s.id} index={i}>
-                  <SupplierCard supplier={s} tagDisplayMaps={tagDisplayMaps} />
+                  <SupplierCard supplier={s} tagDisplayMaps={tagDisplayMaps} lazyImage />
                 </AnimatedGridItem>
               ))
           }
@@ -403,7 +398,7 @@ const Index = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 items-stretch min-w-0">
             {recentItems.map((item, i) => (
               <AnimatedGridItem key={item.id} index={i}>
-                <MarketplaceCard item={item} />
+                <MarketplaceCard item={item} lazyImage />
               </AnimatedGridItem>
             ))}
           </div>
@@ -474,6 +469,8 @@ const Index = () => {
                       <img
                         src={article.image || "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=112&h=112&fit=crop"}
                         alt={title || ""}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -576,6 +573,8 @@ const Index = () => {
                           src={(link.bg_image || link.bgImage || "").toString().trim()}
                           alt=""
                           aria-hidden="true"
+                          loading="lazy"
+                          decoding="async"
                           className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                           onError={() =>
                             setFailedLinkImages((prev) => ({ ...prev, [String(link.id ?? link.url)]: true }))

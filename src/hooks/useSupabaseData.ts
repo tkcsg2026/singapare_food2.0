@@ -2,9 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-export function useFetch<T>(url: string, deps: unknown[] = []) {
+export interface UseFetchOptions {
+  /** Browser fetch cache mode. Use `"default"` for cacheable public APIs. */
+  cache?: RequestCache;
+  /** When false, skip the request until enabled becomes true. */
+  enabled?: boolean;
+}
+
+export function useFetch<T>(
+  url: string,
+  deps: unknown[] = [],
+  options: UseFetchOptions = {},
+) {
+  const { cache = "no-store", enabled = true } = options;
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
@@ -12,7 +24,7 @@ export function useFetch<T>(url: string, deps: unknown[] = []) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(url, { signal, cache: "no-store" });
+      const res = await fetch(url, { signal, cache });
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
       if (signal?.aborted) return;
@@ -24,13 +36,17 @@ export function useFetch<T>(url: string, deps: unknown[] = []) {
       if (signal?.aborted) return;
       setLoading(false);
     }
-  }, [url]);
+  }, [url, cache]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     fetchData(controller.signal);
     return () => controller.abort();
-  }, [fetchData, ...deps]);
+  }, [fetchData, enabled, ...deps]);
 
   return { data, loading, error, refetch: fetchData };
 }

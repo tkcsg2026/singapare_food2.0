@@ -16,6 +16,13 @@ function normaliseMock(item: any) {
   };
 }
 
+function parseLimit(raw: string | null, max = 100): number | null {
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.min(max, Math.floor(n));
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category");
@@ -23,6 +30,7 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") || "approved";
   const sort = searchParams.get("sort") || "newest";
   const seller_id = searchParams.get("seller_id");
+  const limit = parseLimit(searchParams.get("limit"));
   // When true, never fall back to mock data – return real DB results only.
   // Used by the admin approval queue so mock pending items don't pollute it.
   const noFallback = searchParams.get("noFallback") === "true";
@@ -40,6 +48,7 @@ export async function GET(req: NextRequest) {
     if (category) data = data.filter((i) => i.category === category);
     if (sort === "price-asc") data.sort((a, b) => a.price - b.price);
     else if (sort === "price-desc") data.sort((a, b) => b.price - a.price);
+    if (limit) data = data.slice(0, limit);
     return NextResponse.json(data);
   }
 
@@ -53,6 +62,7 @@ export async function GET(req: NextRequest) {
   if (sort === "price-asc") query = query.order("price", { ascending: true });
   else if (sort === "price-desc") query = query.order("price", { ascending: false });
   else query = query.order("created_at", { ascending: false });
+  if (limit && !seller_id && !all) query = query.limit(limit);
 
   const { data, error } = await query;
   if (error) {
