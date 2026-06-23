@@ -433,10 +433,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <PageViewTracker />
       <Header />
       <main className="relative flex-1 w-full min-w-0 pt-20 md:pt-[4.55rem] overflow-x-hidden">
-        <div className="absolute left-0 right-0 top-1 md:top-1.5 z-20 pointer-events-none">
-          <div className="pointer-events-auto">
-            <ScrollingBanner />
-          </div>
+        {/* Site announcement marquee — sits in the band just below the fixed header.
+            Rendered in normal flow so it is never hidden behind the header; the
+            component returns null when the banner is inactive, so no empty strip appears. */}
+        <div className="relative z-20 w-full">
+          <ScrollingBanner />
         </div>
         {children}
       </main>

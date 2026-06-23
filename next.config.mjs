@@ -3,9 +3,14 @@ const nextConfig = {
   reactStrictMode: true,
   typescript: { ignoreBuildErrors: false },
   webpack: (config, { dev }) => {
+    // Use a single RegExp so Windows drive-root system files (pagefile.sys,
+    // hiberfil.sys, "System Volume Information", etc.) are skipped during the
+    // initial watch scan. Glob arrays don't match these absolute root paths,
+    // which produced the noisy "Watchpack Error (initial scan): EINVAL lstat" lines.
     config.watchOptions = {
       ...config.watchOptions,
-      ignored: ["**/node_modules/**", "**/.git/**", "**/System Volume Information/**", "**/$RECYCLE.BIN/**"],
+      ignored:
+        /[\\/](?:node_modules|\.git|System Volume Information|\$RECYCLE\.BIN|DumpStack\.log\.tmp|hiberfil\.sys|pagefile\.sys|swapfile\.sys)([\\/]|$)/,
     };
     // Limit parallel processing to reduce V8 zone memory pressure
     if (dev) {
