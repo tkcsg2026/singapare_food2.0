@@ -364,8 +364,11 @@ const SupplierDetail = () => {
     ? { origin: "原産国", weight: "重量", quantity: "入数", moq: "MOQ", price: "価格", description: "説明", storage: "保存方法", temp: "温度帯", size: "サイズ（W×D×H）" }
     : { origin: "Country of Origin", weight: "Weight", quantity: "Quantity", moq: "MOQ", price: "Price", description: "Description", storage: "Storage Condition", temp: "Temperature", size: "Size (W×D×H)" };
   const supplierDescription = lang === "ja"
-    ? (supplier?.description_ja || supplier?.description || supplier?.about_ja || supplier?.about || "")
-    : (supplier?.description || supplier?.description_ja || supplier?.about || supplier?.about_ja || "");
+    ? (supplier?.description_ja || supplier?.description || "")
+    : (supplier?.description || supplier?.description_ja || "");
+  const supplierAbout = lang === "ja"
+    ? (supplier?.about_ja || supplier?.about || supplier?.description_ja || supplier?.description || "")
+    : (supplier?.about || supplier?.about_ja || supplier?.description || supplier?.description_ja || "");
 
   const displayProductStorageOrTemp = (value: string | undefined) => {
     const raw = (value || "").trim();
@@ -549,7 +552,7 @@ const SupplierDetail = () => {
           {activeTab === "about" && (
             <div className="max-w-2xl">
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {supplierDescription || "—"}
+                {supplierAbout || "—"}
               </p>
             </div>
           )}
