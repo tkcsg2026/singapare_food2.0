@@ -4,8 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  Plus, Trash2, Package, User, Settings,
-  Eye, Clock, Camera, CalendarDays, BadgeCheck, ChevronRight, Heart, MessageCircle, ExternalLink,
+  Plus, Trash2, Package, User, Settings, Store,
+  Eye, Clock, Camera, CalendarDays, BadgeCheck, ChevronRight, Heart, MessageCircle, ExternalLink, MapPin,
 } from "lucide-react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { getSupabase } from "@/lib/supabase";
-import type { MarketplaceItemRow, SupplierRow } from "@/types/database";
+import type { MarketplaceItemRow, ShopListingRow, SupplierRow } from "@/types/database";
 import { useFetch } from "@/hooks/useSupabaseData";
 import { getFavoriteIds, removeFavoriteById, syncFromStorage } from "@/lib/favorites";
 
@@ -43,6 +43,8 @@ const Dashboard = () => {
 
   const [activeTab, setActiveTab] = useState("mypage");
   const [listings, setListings] = useState<MarketplaceItemRow[]>([]);
+  const [shopListings, setShopListings] = useState<ShopListingRow[]>([]);
+  const [shopLoading, setShopLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [supplierAnalytics, setSupplierAnalytics] = useState<SupplierAnalyticsResponse | null>(null);
 
@@ -86,6 +88,10 @@ const Dashboard = () => {
         .then((r) => r.json())
         .then((data) => { setListings(data || []); setLoading(false); })
         .catch(() => setLoading(false));
+      authFetch(`/api/shop-listings?seller_id=${user.id}`)
+        .then((r) => r.json())
+        .then((data) => { setShopListings(Array.isArray(data) ? data : []); setShopLoading(false); })
+        .catch(() => setShopLoading(false));
     }
   }, [user]);
 
@@ -120,6 +126,17 @@ const Dashboard = () => {
       return;
     }
     setListings((prev) => prev.filter((l) => l.slug !== slug));
+  };
+
+  const handleDeleteShopListing = async (slug: string) => {
+    if (!confirm(t.shops.dashboard.deleteConfirm)) return;
+    const res = await authFetch(`/api/shop-listings/${encodeURIComponent(slug)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert((err as { error?: string })?.error || (lang === "ja" ? "削除に失敗しました。" : "Could not delete listing."));
+      return;
+    }
+    setShopListings((prev) => prev.filter((l) => l.slug !== slug));
   };
 
   const handleSaveProfile = async () => {
@@ -422,6 +439,94 @@ const Dashboard = () => {
                     <Link href="/dashboard/new-item">
                       <Button className="mt-4 gap-2">
                         <Plus className="h-4 w-4" /> {t.dashboard.firstListing}
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              {/* My Shop Listings section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-black section-accent">
+                    {t.shops.dashboard.sectionTitle}
+                  </h2>
+                  <Link href="/dashboard/new-shop-listing">
+                    <Button size="sm" className="gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      {t.shops.dashboard.newListing}
+                    </Button>
+                  </Link>
+                </div>
+
+                {shopLoading ? (
+                  <div className="text-center py-12 text-muted-foreground text-sm">{t.common.loading}</div>
+                ) : shopListings.length > 0 ? (
+                  <div className="space-y-3">
+                    {shopListings.map((listing) => (
+                      <div key={listing.id} className="bg-background border-2 border-border flex flex-col sm:flex-row gap-0 overflow-hidden">
+                        <img
+                          src={listing.image}
+                          alt={listing.title}
+                          className="w-full sm:w-24 h-32 sm:h-auto object-cover flex-shrink-0"
+                        />
+                        <div className="flex-1 min-w-0 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h3 className="font-bold text-sm truncate">{listing.title}</h3>
+                              <span className="text-[11px] px-2 py-0.5 font-semibold bg-primary/10 text-primary border border-primary/15">
+                                {t.shops.types[listing.listing_type] ?? listing.listing_type}
+                              </span>
+                              {statusBadge(listing.status)}
+                            </div>
+                            {(listing.monthly_rent || listing.asking_price) && (
+                              <p className="text-xl font-black text-primary">
+                                {listing.monthly_rent || listing.asking_price}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                              {listing.location && (
+                                <span className="flex items-center gap-1">
+                                  <MapPin className="h-3 w-3" />{listing.location}
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {new Date(listing.created_at).toLocaleDateString(lang === "ja" ? "ja-JP" : "en-SG")}
+                              </span>
+                            </div>
+                            {listing.reject_reason && (
+                              <p className="text-xs text-destructive mt-1 font-medium">
+                                {t.dashboard.rejectReason}{listing.reject_reason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex sm:flex-col gap-2 flex-shrink-0">
+                            <Link href={`/shops/${listing.slug}`}>
+                              <Button variant="outline" size="sm" className="gap-1 w-full">
+                                <Eye className="h-3 w-3" /> {t.common.view}
+                              </Button>
+                            </Link>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 text-destructive hover:bg-destructive/10 hover:border-destructive w-full"
+                              onClick={() => handleDeleteShopListing(listing.slug)}
+                            >
+                              <Trash2 className="h-3 w-3" /> {t.common.delete}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-background border-2 border-dashed border-border text-center py-16 text-muted-foreground">
+                    <Store className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+                    <p className="font-bold">{t.shops.dashboard.noListings}</p>
+                    <Link href="/dashboard/new-shop-listing">
+                      <Button className="mt-4 gap-2">
+                        <Plus className="h-4 w-4" /> {t.shops.dashboard.firstListing}
                       </Button>
                     </Link>
                   </div>

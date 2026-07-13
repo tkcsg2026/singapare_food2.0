@@ -7,6 +7,7 @@ const staticRoutes: MetadataRoute.Sitemap = [
   { url: siteUrl, lastModified: new Date(), changeFrequency: "daily", priority: 1.0 },
   { url: `${siteUrl}/suppliers`, lastModified: new Date(), changeFrequency: "daily", priority: 0.9 },
   { url: `${siteUrl}/marketplace`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
+  { url: `${siteUrl}/shops`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
   { url: `${siteUrl}/news`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
   { url: `${siteUrl}/about`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   { url: `${siteUrl}/contact`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
@@ -20,9 +21,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let supplierRoutes: MetadataRoute.Sitemap = [];
   let marketplaceRoutes: MetadataRoute.Sitemap = [];
   let newsRoutes: MetadataRoute.Sitemap = [];
+  let shopRoutes: MetadataRoute.Sitemap = [];
 
   if (supabase) {
-    const [suppliersResult, marketplaceResult, newsResult] = await Promise.all([
+    const [suppliersResult, marketplaceResult, newsResult, shopsResult] = await Promise.all([
       supabase.from("suppliers").select("slug, created_at").order("created_at", { ascending: false }),
       supabase
         .from("marketplace_items")
@@ -33,6 +35,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .from("news_articles")
         .select("slug, published_at, created_at")
         .eq("published", true)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("shop_listings")
+        .select("slug, created_at")
+        .eq("status", "approved")
         .order("created_at", { ascending: false }),
     ]);
 
@@ -56,7 +63,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.7,
     }));
+
+    shopRoutes = (shopsResult.data ?? []).map((s) => ({
+      url: `${siteUrl}/shops/${s.slug}`,
+      lastModified: new Date(s.created_at),
+      changeFrequency: "weekly",
+      priority: 0.6,
+    }));
   }
 
-  return [...staticRoutes, ...supplierRoutes, ...marketplaceRoutes, ...newsRoutes];
+  return [...staticRoutes, ...supplierRoutes, ...marketplaceRoutes, ...newsRoutes, ...shopRoutes];
 }

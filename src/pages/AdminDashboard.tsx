@@ -4,7 +4,7 @@ import {
   Store, ShoppingBag, CheckCircle, XCircle, Plus, Trash2, Edit2, Link2,
   BarChart3, Tag, Image, AlertTriangle, Shield, Save, Eye, EyeOff, Newspaper, Globe, ExternalLink, FileText, Palette, Users,
   Search, Ban, UserCheck, ClipboardList, Video, MessageCircle, Loader2, Play, Megaphone,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Building2,
 } from "lucide-react";
 import { FONT_OPTIONS, COLOR_OPTIONS, applyTheme } from "@/components/ThemeProvider";
 import {
@@ -132,6 +132,7 @@ const AdminDashboard = () => {
     { id: "users",      label: t.admin.tabUsers,      icon: Users },
     { id: "approvals",  label: t.admin.tabApprovals,  icon: CheckCircle },
     { id: "marketplace", label: t.admin.tabMarketplace, icon: ShoppingBag },
+    { id: "shops",      label: t.admin.tabShops,      icon: Building2 },
     { id: "news",       label: t.admin.tabNews,       icon: Newspaper },
     { id: "links",      label: t.admin.tabLinks,      icon: Globe },
     { id: "categories", label: t.admin.tabCategories, icon: Tag },
@@ -219,6 +220,7 @@ const AdminDashboard = () => {
             {activeTab === "users" && <UsersManager />}
             {activeTab === "approvals" && <ApprovalQueue onCountChange={setPendingCount} />}
             {activeTab === "marketplace" && <MarketplaceManager />}
+            {activeTab === "shops" && <ShopListingsManager />}
             {activeTab === "news" && <NewsManager />}
             {activeTab === "links" && <LinksManager />}
             {activeTab === "categories" && <CategoryManager />}
@@ -1884,6 +1886,143 @@ function MarketplaceManager() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ShopListingsManager() {
+  const { t, lang } = useTranslation();
+  const [listings, setListings] = useState<any[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  useEffect(() => { fetchListings(); }, []);
+
+  const fetchListings = async () => {
+    const res = await authFetch("/api/shop-listings?all=true");
+    const data = res.ok ? await res.json() : [];
+    setListings(Array.isArray(data) ? data : []);
+  };
+
+  const handleApprove = async (slug: string) => {
+    await authFetch(`/api/shop-listings/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      body: JSON.stringify({ status: "approved", reject_reason: null }),
+    });
+    fetchListings();
+  };
+
+  const handleReject = async (slug: string) => {
+    await authFetch(`/api/shop-listings/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      body: JSON.stringify({ status: "rejected", reject_reason: rejectReason }),
+    });
+    setRejectId(null);
+    setRejectReason("");
+    fetchListings();
+  };
+
+  const handleDelete = async (slug: string) => {
+    if (!confirm(lang === "ja" ? "この物件掲載を削除しますか？" : "Delete this shop listing?")) return;
+    await authFetch(`/api/shop-listings/${encodeURIComponent(slug)}`, { method: "DELETE" });
+    fetchListings();
+  };
+
+  const statusBadgeCls: Record<string, string> = {
+    approved: "bg-emerald-100 text-emerald-700",
+    pending: "bg-amber-100 text-amber-700",
+    rejected: "bg-red-100 text-red-600",
+  };
+
+  const filtered = statusFilter === "all" ? listings : listings.filter((l) => l.status === statusFilter);
+  const countOf = (s: string) => listings.filter((l) => l.status === s).length;
+  const filterChips: { value: typeof statusFilter; label: string; count: number }[] = [
+    { value: "all",      label: lang === "ja" ? "すべて" : "All",       count: listings.length },
+    { value: "pending",  label: t.dashboard.statusPending,             count: countOf("pending") },
+    { value: "approved", label: t.dashboard.statusApproved,            count: countOf("approved") },
+    { value: "rejected", label: t.dashboard.statusRejected,            count: countOf("rejected") },
+  ];
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-6">{t.admin.tabShops}</h2>
+
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {filterChips.map((chip) => (
+          <button
+            key={chip.value}
+            onClick={() => setStatusFilter(chip.value)}
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors ${
+              statusFilter === chip.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {chip.label} ({chip.count})
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Building2 className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+          <p>{lang === "ja" ? "物件掲載がありません。" : "No shop listings."}</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filtered.map((listing: any) => (
+            <div key={listing.id} className="bg-card border p-5">
+              <div className="flex gap-4 flex-col sm:flex-row">
+                <img src={listing.image} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-sm">{listing.title}</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/15 font-semibold">
+                      {t.shops.types[listing.listing_type] ?? listing.listing_type}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${statusBadgeCls[listing.status] || "bg-muted text-muted-foreground"}`}>
+                      {listing.status}
+                    </span>
+                  </div>
+                  {(listing.monthly_rent || listing.asking_price) && (
+                    <p className="text-lg font-black text-primary">{listing.monthly_rent || listing.asking_price}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {[listing.seller_name, listing.location, listing.building, listing.floor_size].filter(Boolean).join(" · ")}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{listing.description}</p>
+                  {listing.status === "rejected" && listing.reject_reason && (
+                    <p className="text-xs text-destructive mt-1">{t.dashboard.rejectReason}{listing.reject_reason}</p>
+                  )}
+                </div>
+                <div className="flex sm:flex-col gap-2 flex-shrink-0">
+                  {listing.status !== "approved" && (
+                    <Button size="sm" className="rounded-xl gap-1" onClick={() => handleApprove(listing.slug)}>
+                      <CheckCircle className="h-3 w-3" /> {t.admin.approvalApprove}
+                    </Button>
+                  )}
+                  {listing.status !== "rejected" && (
+                    <Button variant="outline" size="sm" className="rounded-xl gap-1 text-destructive" onClick={() => setRejectId(listing.id)}>
+                      <XCircle className="h-3 w-3" /> {t.admin.approvalReject}
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="rounded-xl gap-1 text-destructive" onClick={() => handleDelete(listing.slug)}>
+                    <Trash2 className="h-3 w-3" /> {t.admin.delete}
+                  </Button>
+                </div>
+              </div>
+              {rejectId === listing.id && (
+                <div className="mt-4 space-y-1.5">
+                  <p className="text-xs text-muted-foreground">{t.admin.approvalRejectLabel}</p>
+                  <div className="flex gap-2">
+                    <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder={t.admin.approvalRejectPlaceholder} className="flex-1 h-10 px-3 rounded-lg border bg-background text-sm" />
+                    <Button size="sm" className="rounded-xl" onClick={() => handleReject(listing.slug)}>{t.admin.approvalSend}</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

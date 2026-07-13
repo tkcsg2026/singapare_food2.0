@@ -46,6 +46,11 @@ export interface Database {
         Insert: Omit<ReportRow, "id" | "created_at">;
         Update: Partial<ReportRow>;
       };
+      shop_listings: {
+        Row: ShopListingRow;
+        Insert: Omit<ShopListingRow, "id" | "created_at">;
+        Update: Partial<ShopListingRow>;
+      };
     };
   };
 }
@@ -221,5 +226,36 @@ export interface ReportRow {
   reporter_id: string;
   reason: string;
   status: "pending" | "reviewed" | "dismissed";
+  created_at: string;
+}
+
+export interface ShopListingRow {
+  id: string;
+  slug: string;
+  title: string;
+  /** "rent" = shop for rent, "takeover" = business takeover, "both" = rent or takeover */
+  listing_type: "rent" | "takeover" | "both";
+  location: string;
+  building: string;
+  /** Free text, e.g. "S$8,500/month" */
+  monthly_rent: string;
+  /** Free text, e.g. "850 sqft" */
+  floor_size: string;
+  /** Free text, e.g. "S$60,000" (takeover only) */
+  asking_price: string;
+  /** Free text, e.g. "2 years remaining" */
+  lease_remaining: string;
+  suitable_for: string;
+  /** Canonical feature keys (e.g. "exhaust-hood") plus free-text extras */
+  key_features: string[];
+  reason: string;
+  description: string;
+  image: string;
+  images: string[];
+  seller_id: string | null;
+  seller_name: string;
+  seller_whatsapp: string;
+  status: "approved" | "pending" | "rejected";
+  reject_reason: string | null;
   created_at: string;
 }

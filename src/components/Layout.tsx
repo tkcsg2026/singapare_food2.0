@@ -182,6 +182,7 @@ export function Header() {
   const navItems = [
     { label: t.nav.suppliers,   path: "/suppliers" },
     { label: t.nav.marketplace, path: "/marketplace" },
+    { label: t.nav.shops,       path: "/shops" },
     { label: t.nav.news,        path: "/news" },
     { label: t.nav.jobs,        path: "/jobs" },
     { label: t.nav.about,       path: "/about" },
@@ -359,6 +360,7 @@ export function Footer() {
               <li><Link href="/suppliers" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.supplierSearch}</Link></li>
               <li><Link href="/suppliers?plan=premium" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.premiumListings}</Link></li>
               <li><Link href="/marketplace" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.marketplace}</Link></li>
+              <li><Link href="/shops" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.shops}</Link></li>
               <li><Link href="/news" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.news}</Link></li>
               <li><Link href="/jobs" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.jobs}</Link></li>
               <li><Link href="/links" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.links}</Link></li>

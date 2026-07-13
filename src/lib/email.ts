@@ -160,6 +160,33 @@ export async function sendNewListingNotification(data: {
   return true;
 }
 
+export async function sendNewShopListingNotification(data: {
+  title: string;
+  sellerName: string;
+  listingType: string;
+}): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) return false;
+
+  const { title, sellerName, listingType } = data;
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: CONTACT_FORWARD_TO,
+    subject: `[店舗物件 承認待ち] ${title}`,
+    html: [
+      `<p>新しい店舗賃貸・居抜き掲載が承認待ちです。</p>`,
+      `<p><strong>タイトル:</strong> ${escapeHtml(title)}</p>`,
+      `<p><strong>掲載者:</strong> ${escapeHtml(sellerName)}</p>`,
+      `<p><strong>種別:</strong> ${escapeHtml(listingType)}</p>`,
+      `<p><a href="https://thekitchenconnection.net/admin">管理ダッシュボードで確認する →</a></p>`,
+    ].join("\n"),
+    text: `新しい店舗賃貸・居抜き掲載が承認待ちです。\nタイトル: ${title}\n掲載者: ${sellerName}\n種別: ${listingType}\n管理ダッシュボード: https://thekitchenconnection.net/admin`,
+  });
+
+  return true;
+}
+
 export async function sendMarketplaceRejectionEmail(data: {
   userEmail: string;
   userName: string;

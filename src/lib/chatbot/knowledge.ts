@@ -30,9 +30,9 @@ export const CHATBOT_KNOWLEDGE: KnowledgeEntry[] = [
       "プラットフォーム",
     ],
     answerEn:
-      "F&B Portal is a Singapore-focused directory and community site: browse **Suppliers** for ingredients and services, use **Buy & Sell** for pre-owned kitchen equipment, read **News**, use **Contact** for site enquiries, and manage your account from **Login** / **Dashboard** after you register. We do not process orders or payments for third-party suppliers on your behalf.",
+      "F&B Portal is a Singapore-focused directory and community site: browse **Suppliers** for ingredients and services, use **Buy & Sell** for pre-owned kitchen equipment, check **Shops for Rent/Takeover** for F&B premises, read **News**, use **Contact** for site enquiries, and manage your account from **Login** / **Dashboard** after you register. We do not process orders or payments for third-party suppliers on your behalf.",
     answerJa:
-      "F&B Portal はシンガポール向けのディレクトリ兼コミュニティサイトです。**サプライヤー**で食材・サービスを検索し、**Buy & Sell** で中古厨房機器の売買、**ニュース**の閲覧、サイトに関する問い合わせは**お問い合わせ**、登録後は**ログイン**／**マイページ**でアカウント管理ができます。第三者サプライヤーの注文や決済を当サイトが代行するわけではありません。",
+      "F&B Portal はシンガポール向けのディレクトリ兼コミュニティサイトです。**サプライヤー**で食材・サービスを検索し、**Buy & Sell** で中古厨房機器の売買、**店舗賃貸・居抜き**で店舗物件の確認、**ニュース**の閲覧、サイトに関する問い合わせは**お問い合わせ**、登録後は**ログイン**／**マイページ**でアカウント管理ができます。第三者サプライヤーの注文や決済を当サイトが代行するわけではありません。",
   },
   {
     id: "find_suppliers",
@@ -311,9 +311,9 @@ export const CHATBOT_KNOWLEDGE: KnowledgeEntry[] = [
       "ページ",
     ],
     answerEn:
-      "Main sections: **Suppliers**, **Marketplace** (Buy & Sell), **News**, **Jobs**, **Kitchenware** links, **Links**, **About**, **Contact**, **Login** / account. The **mobile menu** (hamburger) repeats these. Footer links duplicate key pages.",
+      "Main sections: **Suppliers**, **Marketplace** (Buy & Sell), **Shops for Rent/Takeover**, **News**, **Jobs**, **Kitchenware** links, **Links**, **About**, **Contact**, **Login** / account. The **mobile menu** (hamburger) repeats these. Footer links duplicate key pages.",
     answerJa:
-      "主なページ:**サプライヤー**、**売り&買い**（Buy & Sell）、**ニュース**、**求人**、**キッチン用品**、**リンク集**、**About**、**お問い合わせ**、**ログイン**／アカウントです。**スマホ**はハンバーガーメニューから同様に開けます。フッターにも主要リンクがあります。",
+      "主なページ:**サプライヤー**、**売り&買い**（Buy & Sell）、**店舗賃貸・居抜き**、**ニュース**、**求人**、**キッチン用品**、**リンク集**、**About**、**お問い合わせ**、**ログイン**／アカウントです。**スマホ**はハンバーガーメニューから同様に開けます。フッターにも主要リンクがあります。",
   },
   {
     id: "jobs_whatsapp",
