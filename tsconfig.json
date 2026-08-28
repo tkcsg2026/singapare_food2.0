@@ -38,6 +38,8 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "singapare_food2.0",
+    "src/test"
   ]
 }

@@ -185,6 +185,7 @@ export function Header() {
     { label: t.nav.shops,       path: "/shops" },
     { label: t.nav.news,        path: "/news" },
     { label: t.nav.jobs,        path: "/jobs" },
+    { label: t.nav.community,   path: "/community" },
     { label: t.nav.about,       path: "/about" },
     { label: t.nav.contact,     path: "/contact" },
   ];
@@ -363,6 +364,7 @@ export function Footer() {
               <li><Link href="/shops" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.shops}</Link></li>
               <li><Link href="/news" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.news}</Link></li>
               <li><Link href="/jobs" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.jobs}</Link></li>
+              <li><Link href="/community" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.community}</Link></li>
               <li><Link href="/links" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.footer.links}</Link></li>
               <li><Link href="/about" className="block py-2 -my-1 hover:text-primary transition-colors duration-200">{t.about.pageTitle}</Link></li>
             </ul>

@@ -77,19 +77,27 @@ const ShopListingDetail = () => {
   }
 
   const images = listing.images?.length ? listing.images : [listing.image];
+  const isWanted = listing.post_type === "wanted";
   const typeLabel = t.shops.types[listing.listing_type] ?? listing.listing_type;
   const featureLabel = (f: string) => t.shops.features[f] || f;
-  const whatsappMessage = `Hi, I'm interested in your shop listing "${listing.title}" on the F&B Portal.`;
+  const whatsappMessage = isWanted
+    ? `Hi, I saw your "${listing.title}" request on the F&B Portal and may have a matching space.`
+    : `Hi, I'm interested in your shop listing "${listing.title}" on the F&B Portal.`;
+
+  // A "wanted" post reuses the same columns, so only the labels change: rent
+  // becomes budget, location becomes preferred location, and so on.
+  const d = t.shops.detail;
+  const labels = isWanted ? d.wanted : d;
 
   const factRows = [
-    { icon: MapPin, label: t.shops.detail.location, value: listing.location },
-    { icon: Building2, label: t.shops.detail.building, value: listing.building },
-    { icon: Banknote, label: t.shops.detail.monthlyRent, value: listing.monthly_rent },
-    { icon: Ruler, label: t.shops.detail.floorSize, value: listing.floor_size },
-    { icon: Tag, label: t.shops.detail.askingPrice, value: listing.asking_price },
-    { icon: CalendarClock, label: t.shops.detail.leaseRemaining, value: listing.lease_remaining },
-    { icon: UtensilsCrossed, label: t.shops.detail.suitableFor, value: listing.suitable_for },
-    { icon: Info, label: t.shops.detail.reason, value: listing.reason },
+    { icon: MapPin, label: labels.location, value: listing.location },
+    { icon: Building2, label: labels.building, value: listing.building },
+    { icon: Banknote, label: labels.monthlyRent, value: listing.monthly_rent },
+    { icon: Ruler, label: labels.floorSize, value: listing.floor_size },
+    { icon: Tag, label: labels.askingPrice, value: listing.asking_price },
+    { icon: CalendarClock, label: labels.leaseRemaining, value: listing.lease_remaining },
+    { icon: UtensilsCrossed, label: labels.suitableFor, value: listing.suitable_for },
+    { icon: Info, label: labels.reason, value: listing.reason },
   ].filter((row) => row.value && row.value.trim());
 
   const contactButton = user ? (
@@ -163,9 +171,16 @@ const ShopListingDetail = () => {
           </div>
 
           <div>
-            <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-primary text-primary-foreground font-semibold mb-3">
-              {typeLabel}
-            </span>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-primary text-primary-foreground font-semibold">
+                {typeLabel}
+              </span>
+              {isWanted && (
+                <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-blue-600 text-white font-semibold">
+                  {d.wanted.lookingFor}
+                </span>
+              )}
+            </div>
             <h1 className="text-2xl font-black tracking-tight">{listing.title}</h1>
             {listing.monthly_rent && (
               <p className="text-3xl font-black text-primary mt-2">{listing.monthly_rent}</p>
@@ -191,7 +206,7 @@ const ShopListingDetail = () => {
 
             {listing.key_features?.length > 0 && (
               <div className="mt-6">
-                <h3 className="font-bold text-sm mb-2">{t.shops.detail.keyFeatures}</h3>
+                <h3 className="font-bold text-sm mb-2">{labels.keyFeatures}</h3>
                 <div className="flex flex-wrap gap-2">
                   {listing.key_features.map((f) => (
                     <span
@@ -206,7 +221,7 @@ const ShopListingDetail = () => {
             )}
 
             <div className="mt-6 p-5 bg-card border">
-              <h3 className="font-bold text-sm mb-2">{t.shops.detail.description}</h3>
+              <h3 className="font-bold text-sm mb-2">{labels.description}</h3>
               <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{listing.description}</p>
             </div>
 
@@ -215,7 +230,7 @@ const ShopListingDetail = () => {
                 <User className="h-4 w-4 text-muted-foreground" /> {t.shops.detail.postedBy}
               </h3>
               <p className="text-sm font-semibold">{listing.seller_name}</p>
-              <p className="text-xs text-muted-foreground mt-1">{t.shops.detail.contactHint}</p>
+              <p className="text-xs text-muted-foreground mt-1">{labels.contactHint}</p>
             </div>
 
             {contactButton && <div className="mt-4 hidden sm:block">{contactButton}</div>}

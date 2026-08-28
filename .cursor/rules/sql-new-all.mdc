@@ -1,0 +1,12 @@
+---
+description: All schema changes go in supabase/new_all.sql; never create new SQL files or apply them to the live database unless asked.
+alwaysApply: true
+---
+
+# SQL migrations
+
+- Do **not** create new `.sql` files.
+- Append every schema change to `supabase/new_all.sql` only.
+- Keep new statements idempotent (`IF NOT EXISTS`, `DROP … IF EXISTS`, named-constraint guards).
+- Never run SQL against the existing/live database unless the user explicitly asks to apply it.
+- Leave `supabase-complete.sql` and the older files in `supabase/` unchanged unless the user asks otherwise.

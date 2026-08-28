@@ -227,6 +227,28 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  /* Visible horizontal scrollbar (e.g. Community category tabs). */
+  .scrollbar-x {
+    overflow-x: scroll;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.45) hsl(var(--muted));
+  }
+  .scrollbar-x::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scrollbar-x::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 9999px;
+  }
+  .scrollbar-x::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.4);
+    border-radius: 9999px;
+  }
+  .scrollbar-x::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
+  }
   /* Smooth horizontal scroll on iOS */
   .touch-pan-x {
     -webkit-overflow-scrolling: touch;

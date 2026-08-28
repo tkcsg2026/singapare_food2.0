@@ -1,18 +1,19 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Upload, X } from "lucide-react";
+import { ArrowLeft, Upload, X, Package, ShoppingCart } from "lucide-react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { useFetch } from "@/hooks/useSupabaseData";
 import { getCategoryDisplayName } from "@/lib/category-display";
-import type { CategoryRow } from "@/types/database";
+import type { CategoryRow, MarketplacePostType } from "@/types/database";
 
 const NewItem = () => {
   const { user, profile, loading: authLoading } = useRequireAuth();
   const { t, lang } = useTranslation();
+  const [postType, setPostType] = useState<MarketplacePostType>("selling");
   const [submitting, setSubmitting] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [termsText, setTermsText] = useState("");
@@ -57,6 +58,14 @@ const NewItem = () => {
       setForm((p) => ({ ...p, category: mpCategories[0] }));
     }
   }, [mpCategories, form.category]);
+
+  // /dashboard/new-item?type=wanted opens the "Wanted" side of the board. Read
+  // from location so this client page needs no Suspense boundary.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const requested = new URLSearchParams(window.location.search).get("type");
+    if (requested === "wanted") setPostType("wanted");
+  }, []);
 
   useEffect(() => {
     const fallback = t.legal.termsFallback;
@@ -114,6 +123,8 @@ const NewItem = () => {
     return urls;
   };
 
+  const isWanted = postType === "wanted";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !profile || !agreed) return;
@@ -129,6 +140,7 @@ const NewItem = () => {
 
     const body = {
       title: form.title,
+      post_type: postType,
       category: finalCategory,
       price: Number(form.price),
       condition: form.condition,
@@ -147,7 +159,7 @@ const NewItem = () => {
     const res = await fetch("/api/marketplace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setSubmitting(false);
     if (res.ok) {
-      alert(t.newItem.successMsg);
+      alert(isWanted ? t.newItem.wanted.successMsg : t.newItem.successMsg);
       window.location.href = "/dashboard";
     } else {
       alert(t.newItem.errorMsg);
@@ -158,18 +170,75 @@ const NewItem = () => {
     return <Layout><div className="container py-16 text-center text-muted-foreground">{t.common.loading}</div></Layout>;
   }
 
+  // Both sides post into the same table; only the field labels differ, so a
+  // "wanted" post reads as a request rather than an offer.
+  const ni = t.newItem;
+  const nw = ni.wanted;
+  const label = {
+    pageTitle: isWanted ? nw.title : ni.title,
+    title: isWanted ? nw.fieldTitle : ni.fieldTitle,
+    price: isWanted ? nw.fieldPrice : ni.fieldPrice,
+    condition: isWanted ? nw.fieldCondition : ni.fieldCondition,
+    yearsUsed: isWanted ? nw.fieldYearsUsed : ni.fieldYearsUsed,
+    description: isWanted ? nw.fieldDescription : ni.fieldDescription,
+    area: isWanted ? nw.fieldArea : ni.fieldArea,
+    delivery: isWanted ? nw.fieldDelivery : ni.fieldDelivery,
+    images: isWanted ? nw.fieldImages : ni.fieldImages,
+    submit: isWanted ? nw.submit : ni.submit,
+  };
+
+  const postTypeOptions: {
+    value: MarketplacePostType;
+    label: string;
+    hint: string;
+    icon: typeof Package;
+  }[] = [
+    { value: "selling", label: ni.postTypeSelling, hint: ni.postTypeSellingHint, icon: Package },
+    { value: "wanted", label: ni.postTypeWanted, hint: ni.postTypeWantedHint, icon: ShoppingCart },
+  ];
+
   return (
     <Layout>
       <div className="container max-w-2xl py-8">
         <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 font-medium">
           <ArrowLeft className="h-4 w-4" /> {t.newItem.backToDashboard}
         </Link>
-        <h1 className="text-3xl font-black tracking-tight mb-8">{t.newItem.title}</h1>
+        <h1 className="text-3xl font-black tracking-tight mb-8">{label.pageTitle}</h1>
 
         <form onSubmit={handleSubmit} className="bg-card border p-6 space-y-5">
+          {/* Which side of the board — selling an item, or looking for one */}
+          <div>
+            <label className="text-sm font-medium block mb-1.5">{ni.fieldPostType}</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {postTypeOptions.map((option) => {
+                const Icon = option.icon;
+                const active = postType === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPostType(option.value)}
+                    aria-pressed={active}
+                    className={`flex items-start gap-3 text-left rounded-xl border p-3.5 transition-colors min-h-[44px] ${
+                      active
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className={`h-5 w-5 flex-shrink-0 mt-0.5 ${active ? "text-primary" : ""}`} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{option.label}</span>
+                      <span className="block text-[11px] text-muted-foreground mt-0.5">{option.hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Title */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldTitle}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.title}</label>
             <input type="text" value={form.title} onChange={(e) => handleChange("title", e.target.value)} className="w-full h-11 px-4 rounded-lg border bg-background text-sm" required />
           </div>
 
@@ -197,7 +266,7 @@ const NewItem = () => {
               )}
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldPrice}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.price}</label>
               <input type="number" value={form.price} onChange={(e) => handleChange("price", e.target.value)} className="w-full h-11 px-4 rounded-lg border bg-background text-sm" required min="0" />
             </div>
           </div>
@@ -205,33 +274,33 @@ const NewItem = () => {
           {/* Condition + Years Used */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldCondition}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.condition}</label>
               <select value={form.condition} onChange={(e) => handleChange("condition", e.target.value)} className="w-full h-11 px-4 rounded-lg border bg-background text-sm">
                 {conditions.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldYearsUsed}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.yearsUsed}</label>
               <input type="number" value={form.years_used} onChange={(e) => handleChange("years_used", e.target.value)} className="w-full h-11 px-4 rounded-lg border bg-background text-sm" required min="0" />
             </div>
           </div>
 
           {/* Description */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldDescription}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.description}</label>
             <textarea value={form.description} onChange={(e) => handleChange("description", e.target.value)} className="w-full h-28 p-4 rounded-lg border bg-background text-sm resize-none" required />
           </div>
 
           {/* Area + Delivery */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldArea}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.area}</label>
               <select value={form.area} onChange={(e) => handleChange("area", e.target.value)} className="w-full h-11 px-4 rounded-lg border bg-background text-sm">
                 {areas.map((a) => <option key={a}>{a}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldDelivery}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.delivery}</label>
               <select value={form.delivery} onChange={(e) => handleChange("delivery", e.target.value)} className="w-full h-11 px-4 rounded-lg border bg-background text-sm">
                 {deliveryOptions.map((d) => <option key={d}>{d}</option>)}
               </select>
@@ -255,7 +324,7 @@ const NewItem = () => {
 
           {/* Image Upload */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.newItem.fieldImages}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.images}</label>
             <p className="text-xs text-muted-foreground mb-2">{t.newItem.fieldImagesHint}</p>
             {imagePreviews.length > 0 && (
               <div className="flex flex-wrap gap-3 mb-3">
@@ -280,7 +349,7 @@ const NewItem = () => {
                 className="flex items-center gap-2 h-11 px-4 rounded-lg border border-dashed border-border bg-background text-sm text-muted-foreground hover:bg-muted transition-colors"
               >
                 <Upload className="h-4 w-4" />
-                {t.newItem.fieldImages} ({imageFiles.length}/5)
+                {label.images} ({imageFiles.length}/5)
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" onChange={handleImageSelect} />

@@ -97,6 +97,7 @@ const MarketplaceItemPage = () => {
     conditionDisplay?: Record<string, string>;
     deliveryDisplay?: Record<string, string>;
   };
+  const isWanted = item.post_type === "wanted";
   const displayTitle = lang === "en" && item.title_en ? item.title_en : item.title;
   const displayDescription = lang === "en" && item.description_en ? item.description_en : item.description;
   const displayArea =
@@ -156,8 +157,20 @@ const MarketplaceItemPage = () => {
             )}
           </div>
           <div>
+            {isWanted && (
+              <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-blue-600 text-white font-semibold mb-3">
+                {t.marketplace.wantedBadge}
+              </span>
+            )}
             <h1 className="text-2xl font-black tracking-tight">{displayTitle}</h1>
-            <p className="text-3xl font-black text-primary mt-2">S${Number(item.price).toLocaleString()}</p>
+            <p className="text-3xl font-black text-primary mt-2">
+              {isWanted && (
+                <span className="text-base font-semibold text-muted-foreground">
+                  {t.marketplace.wantedBudget}:{" "}
+                </span>
+              )}
+              S${Number(item.price).toLocaleString()}
+            </p>
             <div className="mt-6 space-y-3">
               <div className="flex items-center gap-3 text-sm">
                 <Package className="h-4 w-4 text-muted-foreground" />
@@ -200,7 +213,11 @@ const MarketplaceItemPage = () => {
               {user ? (
                 <WhatsAppButton
                   phone={item.seller_whatsapp}
-                  message={`Hi, I'm interested in your ${displayTitle} listed on the F&B Portal.`}
+                  message={
+                    isWanted
+                      ? `Hi, I saw your wanted post for ${displayTitle} on the F&B Portal and may have one available.`
+                      : `Hi, I'm interested in your ${displayTitle} listed on the F&B Portal.`
+                  }
                   fullWidth
                   size="lg"
                 />
@@ -256,7 +273,11 @@ const MarketplaceItemPage = () => {
         {user ? (
           <WhatsAppButton
             phone={item.seller_whatsapp}
-            message={`Hi, I'm interested in your ${displayTitle} listed on the F&B Portal.`}
+            message={
+                    isWanted
+                      ? `Hi, I saw your wanted post for ${displayTitle} on the F&B Portal and may have one available.`
+                      : `Hi, I'm interested in your ${displayTitle} listed on the F&B Portal.`
+                  }
             fullWidth
             size="lg"
           />

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Search } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 interface MarketplaceCardProps {
@@ -6,6 +7,8 @@ interface MarketplaceCardProps {
     slug: string;
     image: string;
     title: string;
+    /** Missing on rows created before the post_type migration — treated as "selling". */
+    post_type?: "selling" | "wanted";
     title_en?: string;
     price: number;
     area: string;
@@ -24,6 +27,7 @@ export function MarketplaceCard({ item, onRequireLogin, lazyImage = false }: Mar
     conditionDisplay?: Record<string, string>;
   };
 
+  const isWanted = item.post_type === "wanted";
   const displayTitle = lang === "en" && item.title_en ? item.title_en : item.title;
   const displayArea = lang === "en"
     ? (item.area_en?.trim() || mkt.areaDisplay?.[item.area] || item.area)
@@ -41,7 +45,7 @@ export function MarketplaceCard({ item, onRequireLogin, lazyImage = false }: Mar
   return (
     <Link href={`/marketplace/${item.slug}`} className="group block h-full min-w-0" onClick={handleClick}>
       <div className="bg-card overflow-hidden shadow-card card-hover card-lift border border-border h-full flex flex-col min-w-0 transition-shadow duration-300 group-hover:shadow-[0_12px_28px_rgba(0,0,0,0.12),0_0_0_1px_hsl(var(--primary)/0.1)]">
-        <div className="aspect-square overflow-hidden bg-muted flex-shrink-0">
+        <div className="aspect-square overflow-hidden bg-muted flex-shrink-0 relative">
           <img
             src={item.image}
             alt={displayTitle}
@@ -49,9 +53,18 @@ export function MarketplaceCard({ item, onRequireLogin, lazyImage = false }: Mar
             decoding="async"
             className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.07]"
           />
+          {isWanted && (
+            <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-blue-600 text-white font-semibold shadow-sm">
+              <Search className="h-2.5 w-2.5" />
+              {t.marketplace.wantedBadge}
+            </span>
+          )}
         </div>
         <div className="p-3 flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-          <p className="font-bold text-sm sm:text-base text-primary flex-shrink-0">S${item.price.toLocaleString()}</p>
+          <p className="font-bold text-sm sm:text-base text-primary flex-shrink-0 truncate">
+            {isWanted && <span className="font-semibold text-muted-foreground">{t.marketplace.wantedBudget}: </span>}
+            S${item.price.toLocaleString()}
+          </p>
           <p className="text-xs sm:text-[15px] font-medium text-foreground truncate mt-1 leading-snug min-w-0" title={displayTitle}>{displayTitle}</p>
           <div className="flex items-center gap-2 mt-2 flex-shrink-0 min-w-0">
             <span className="text-[10px] sm:text-xs text-muted-foreground truncate min-w-0">{displayArea}</span>

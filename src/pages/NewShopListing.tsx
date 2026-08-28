@@ -1,12 +1,13 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Upload, X } from "lucide-react";
+import { ArrowLeft, Upload, X, Store, Handshake } from "lucide-react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { getSupabase } from "@/lib/supabase";
+import type { ShopPostType } from "@/types/database";
 
 const FEATURE_KEYS = [
   "exhaust-hood",
@@ -19,6 +20,7 @@ const FEATURE_KEYS = [
 const NewShopListing = () => {
   const { user, profile, loading: authLoading } = useRequireAuth();
   const { t } = useTranslation();
+  const [postType, setPostType] = useState<ShopPostType>("available");
   const [submitting, setSubmitting] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [termsText, setTermsText] = useState("");
@@ -43,6 +45,14 @@ const NewShopListing = () => {
     contactName: "",
   });
   const [features, setFeatures] = useState<string[]>([]);
+
+  // /dashboard/new-shop-listing?type=wanted opens the "Looking for" side of the
+  // board. Read from location so this client page needs no Suspense boundary.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const requested = new URLSearchParams(window.location.search).get("type");
+    if (requested === "wanted") setPostType("wanted");
+  }, []);
 
   useEffect(() => {
     const fallback = t.legal.termsFallback;
@@ -112,6 +122,8 @@ const NewShopListing = () => {
     return urls;
   };
 
+  const isWanted = postType === "wanted";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !profile || !agreed) return;
@@ -141,6 +153,7 @@ const NewShopListing = () => {
 
       const body = {
         title: form.title,
+        post_type: postType,
         listing_type: form.listingType,
         location: form.location,
         building: form.building,
@@ -171,7 +184,7 @@ const NewShopListing = () => {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        alert(t.shops.form.successMsg);
+        alert(isWanted ? t.shops.form.wanted.successMsg : t.shops.form.successMsg);
         window.location.href = "/dashboard";
       } else {
         const err = await res.json().catch(() => ({}));
@@ -190,23 +203,98 @@ const NewShopListing = () => {
 
   const inputCls = "w-full h-11 px-4 rounded-lg border bg-background text-sm";
 
+  // Both sides post into the same table; only the field labels differ, so a
+  // "wanted" post reads as a request rather than an offer.
+  const f = t.shops.form;
+  const w = f.wanted;
+  const label = {
+    pageTitle: isWanted ? w.title : f.title,
+    title: isWanted ? w.fieldTitle : f.fieldTitle,
+    titlePh: isWanted ? w.fieldTitlePlaceholder : f.fieldTitlePlaceholder,
+    listingType: isWanted ? w.fieldListingType : f.fieldListingType,
+    listingTypePh: isWanted ? w.fieldListingTypePlaceholder : f.fieldListingTypePlaceholder,
+    typeRent: isWanted ? w.typeRent : t.shops.types.rent,
+    typeTakeover: isWanted ? w.typeTakeover : t.shops.types.takeover,
+    typeBoth: isWanted ? w.typeBoth : t.shops.types.both,
+    location: isWanted ? w.fieldLocation : f.fieldLocation,
+    locationPh: isWanted ? w.fieldLocationPlaceholder : f.fieldLocationPlaceholder,
+    building: isWanted ? w.fieldBuilding : f.fieldBuilding,
+    buildingPh: isWanted ? w.fieldBuildingPlaceholder : f.fieldBuildingPlaceholder,
+    monthlyRent: isWanted ? w.fieldMonthlyRent : f.fieldMonthlyRent,
+    monthlyRentPh: isWanted ? w.fieldMonthlyRentPlaceholder : f.fieldMonthlyRentPlaceholder,
+    floorSize: isWanted ? w.fieldFloorSize : f.fieldFloorSize,
+    floorSizePh: isWanted ? w.fieldFloorSizePlaceholder : f.fieldFloorSizePlaceholder,
+    askingPrice: isWanted ? w.fieldAskingPrice : f.fieldAskingPrice,
+    askingPricePh: isWanted ? w.fieldAskingPricePlaceholder : f.fieldAskingPricePlaceholder,
+    leaseRemaining: isWanted ? w.fieldLeaseRemaining : f.fieldLeaseRemaining,
+    leaseRemainingPh: isWanted ? w.fieldLeaseRemainingPlaceholder : f.fieldLeaseRemainingPlaceholder,
+    suitableFor: isWanted ? w.fieldSuitableFor : f.fieldSuitableFor,
+    suitableForPh: isWanted ? w.fieldSuitableForPlaceholder : f.fieldSuitableForPlaceholder,
+    keyFeatures: isWanted ? w.fieldKeyFeatures : f.fieldKeyFeatures,
+    reason: isWanted ? w.fieldReason : f.fieldReason,
+    reasonPh: isWanted ? w.fieldReasonPlaceholder : f.fieldReasonPlaceholder,
+    description: isWanted ? w.fieldDescription : f.fieldDescription,
+    descriptionPh: isWanted ? w.fieldDescriptionPlaceholder : f.fieldDescriptionPlaceholder,
+    images: isWanted ? w.fieldImages : f.fieldImages,
+    submit: isWanted ? w.submit : f.submit,
+  };
+
+  const postTypeOptions: { value: ShopPostType; label: string; hint: string; icon: typeof Store }[] = [
+    { value: "available", label: f.postTypeAvailable, hint: f.postTypeAvailableHint, icon: Store },
+    { value: "wanted", label: f.postTypeWanted, hint: f.postTypeWantedHint, icon: Handshake },
+  ];
+
   return (
     <Layout>
       <div className="container max-w-2xl py-8">
         <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 font-medium">
           <ArrowLeft className="h-4 w-4" /> {t.shops.form.backToDashboard}
         </Link>
-        <h1 className="text-3xl font-black tracking-tight mb-8">{t.shops.form.title}</h1>
+        <h1 className="text-3xl font-black tracking-tight mb-8">{label.pageTitle}</h1>
 
         <form onSubmit={handleSubmit} className="bg-card border p-6 space-y-5">
+          {/* Which side of the board — offering a space, or looking for one */}
+          <div>
+            <label className="text-sm font-medium block mb-1.5">{f.fieldPostType}</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {postTypeOptions.map((option) => {
+                const Icon = option.icon;
+                const active = postType === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPostType(option.value)}
+                    aria-pressed={active}
+                    className={`flex items-start gap-3 text-left rounded-xl border p-3.5 transition-colors min-h-[44px] ${
+                      active
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon
+                      className={`h-5 w-5 flex-shrink-0 mt-0.5 ${active ? "text-primary" : ""}`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{option.label}</span>
+                      <span className="block text-[11px] text-muted-foreground mt-0.5">
+                        {option.hint}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Title */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldTitle}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.title}</label>
             <input
               type="text"
               value={form.title}
               onChange={(e) => handleChange("title", e.target.value)}
-              placeholder={t.shops.form.fieldTitlePlaceholder}
+              placeholder={label.titlePh}
               className={inputCls}
               required
             />
@@ -214,40 +302,40 @@ const NewShopListing = () => {
 
           {/* Listing Type */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldListingType}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.listingType}</label>
             <select
               value={form.listingType}
               onChange={(e) => handleChange("listingType", e.target.value)}
               className={`${inputCls} ${form.listingType ? "" : "text-muted-foreground"}`}
               required
             >
-              <option value="" disabled>{t.shops.form.fieldListingTypePlaceholder}</option>
-              <option value="takeover" className="text-foreground">{t.shops.types.takeover}</option>
-              <option value="rent" className="text-foreground">{t.shops.types.rent}</option>
-              <option value="both" className="text-foreground">{t.shops.types.both}</option>
+              <option value="" disabled>{label.listingTypePh}</option>
+              <option value="takeover" className="text-foreground">{label.typeTakeover}</option>
+              <option value="rent" className="text-foreground">{label.typeRent}</option>
+              <option value="both" className="text-foreground">{label.typeBoth}</option>
             </select>
           </div>
 
           {/* Location + Building / Mall */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldLocation}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.location}</label>
               <input
                 type="text"
                 value={form.location}
                 onChange={(e) => handleChange("location", e.target.value)}
-                placeholder={t.shops.form.fieldLocationPlaceholder}
+                placeholder={label.locationPh}
                 className={inputCls}
                 required
               />
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldBuilding}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.building}</label>
               <input
                 type="text"
                 value={form.building}
                 onChange={(e) => handleChange("building", e.target.value)}
-                placeholder={t.shops.form.fieldBuildingPlaceholder}
+                placeholder={label.buildingPh}
                 className={inputCls}
               />
             </div>
@@ -256,22 +344,22 @@ const NewShopListing = () => {
           {/* Monthly Rent + Floor Size */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldMonthlyRent}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.monthlyRent}</label>
               <input
                 type="text"
                 value={form.monthlyRent}
                 onChange={(e) => handleChange("monthlyRent", e.target.value)}
-                placeholder={t.shops.form.fieldMonthlyRentPlaceholder}
+                placeholder={label.monthlyRentPh}
                 className={inputCls}
               />
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldFloorSize}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.floorSize}</label>
               <input
                 type="text"
                 value={form.floorSize}
                 onChange={(e) => handleChange("floorSize", e.target.value)}
-                placeholder={t.shops.form.fieldFloorSizePlaceholder}
+                placeholder={label.floorSizePh}
                 className={inputCls}
               />
             </div>
@@ -280,22 +368,22 @@ const NewShopListing = () => {
           {/* Asking Price + Lease Remaining */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldAskingPrice}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.askingPrice}</label>
               <input
                 type="text"
                 value={form.askingPrice}
                 onChange={(e) => handleChange("askingPrice", e.target.value)}
-                placeholder={t.shops.form.fieldAskingPricePlaceholder}
+                placeholder={label.askingPricePh}
                 className={inputCls}
               />
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldLeaseRemaining}</label>
+              <label className="text-sm font-medium block mb-1.5">{label.leaseRemaining}</label>
               <input
                 type="text"
                 value={form.leaseRemaining}
                 onChange={(e) => handleChange("leaseRemaining", e.target.value)}
-                placeholder={t.shops.form.fieldLeaseRemainingPlaceholder}
+                placeholder={label.leaseRemainingPh}
                 className={inputCls}
               />
             </div>
@@ -303,19 +391,19 @@ const NewShopListing = () => {
 
           {/* Suitable For */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldSuitableFor}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.suitableFor}</label>
             <input
               type="text"
               value={form.suitableFor}
               onChange={(e) => handleChange("suitableFor", e.target.value)}
-              placeholder={t.shops.form.fieldSuitableForPlaceholder}
+              placeholder={label.suitableForPh}
               className={inputCls}
             />
           </div>
 
           {/* Key Features */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldKeyFeatures}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.keyFeatures}</label>
             <p className="text-xs text-muted-foreground mb-2">{t.shops.form.fieldKeyFeaturesHint}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {FEATURE_KEYS.map((key) => (
@@ -341,23 +429,23 @@ const NewShopListing = () => {
 
           {/* Reason for Transfer (Optional) */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldReason}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.reason}</label>
             <input
               type="text"
               value={form.reason}
               onChange={(e) => handleChange("reason", e.target.value)}
-              placeholder={t.shops.form.fieldReasonPlaceholder}
+              placeholder={label.reasonPh}
               className={inputCls}
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldDescription}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.description}</label>
             <textarea
               value={form.description}
               onChange={(e) => handleChange("description", e.target.value)}
-              placeholder={t.shops.form.fieldDescriptionPlaceholder}
+              placeholder={label.descriptionPh}
               className="w-full h-32 p-4 rounded-lg border bg-background text-sm resize-none"
               required
             />
@@ -381,7 +469,7 @@ const NewShopListing = () => {
 
           {/* Image Upload */}
           <div>
-            <label className="text-sm font-medium block mb-1.5">{t.shops.form.fieldImages}</label>
+            <label className="text-sm font-medium block mb-1.5">{label.images}</label>
             <p className="text-xs text-muted-foreground mb-2">{t.shops.form.fieldImagesHint}</p>
             {imagePreviews.length > 0 && (
               <div className="flex flex-wrap gap-3 mb-3">
@@ -406,7 +494,7 @@ const NewShopListing = () => {
                 className="flex items-center gap-2 h-11 px-4 rounded-lg border border-dashed border-border bg-background text-sm text-muted-foreground hover:bg-muted transition-colors"
               >
                 <Upload className="h-4 w-4" />
-                {t.shops.form.fieldImages} ({imageFiles.length}/5)
+                {label.images} ({imageFiles.length}/5)
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" onChange={handleImageSelect} />

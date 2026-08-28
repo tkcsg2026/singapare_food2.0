@@ -4,7 +4,7 @@ import {
   Store, ShoppingBag, CheckCircle, XCircle, Plus, Trash2, Edit2, Link2,
   BarChart3, Tag, Image, AlertTriangle, Shield, Save, Eye, EyeOff, Newspaper, Globe, ExternalLink, FileText, Palette, Users,
   Search, Ban, UserCheck, ClipboardList, Video, MessageCircle, Loader2, Play, Megaphone,
-  ArrowUp, ArrowDown, Building2,
+  ArrowUp, ArrowDown, Building2, MessagesSquare, Pin, Lock,
 } from "lucide-react";
 import { FONT_OPTIONS, COLOR_OPTIONS, applyTheme } from "@/components/ThemeProvider";
 import {
@@ -22,6 +22,7 @@ import { resolveCategoryDisplayLabels } from "@/lib/category-display";
 import { buildDynamicGroups, getGroupLabel } from "@/lib/category-groups";
 import type { CategoryGroup } from "@/lib/category-groups";
 import { resolveCountryLabel } from "@/lib/country-map";
+import { COMMUNITY_CATEGORIES } from "@/lib/community";
 
 /** Returns true when a URL clearly points to a video file (by extension). */
 function isVideoFileUrl(url: string): boolean {
@@ -138,6 +139,7 @@ const AdminDashboard = () => {
     { id: "categories", label: t.admin.tabCategories, icon: Tag },
     { id: "about",      label: t.admin.tabAbout,     icon: FileText },
     { id: "jobs",       label: t.admin.tabJobs,      icon: MessageCircle },
+    { id: "community",  label: t.admin.tabCommunity, icon: MessagesSquare },
     { id: "terms",      label: t.admin.tabTerms,      icon: Shield },
     { id: "privacy",    label: t.admin.tabPrivacy,    icon: Shield },
     { id: "home-video", label: t.admin.tabHomeVideo,   icon: Video },
@@ -226,6 +228,7 @@ const AdminDashboard = () => {
             {activeTab === "categories" && <CategoryManager />}
             {activeTab === "about" && <AboutSiteManager />}
             {activeTab === "jobs" && <JobsManager />}
+            {activeTab === "community" && <CommunityManager />}
             {activeTab === "terms" && <TermsManager />}
             {activeTab === "privacy" && <PrivacyManager />}
             {activeTab === "home-video" && <HomeVideoManager />}
@@ -1871,9 +1874,16 @@ function MarketplaceManager() {
             <div className="flex-1 min-w-0">
               <p className="font-bold text-sm truncate">{lang === "en" && item.title_en ? item.title_en : item.title}</p>
               <p className="text-xs text-muted-foreground">S${Number(item.price).toLocaleString()} · {lang === "en" && item.area_en ? item.area_en : item.area} · {lang === "en" && item.condition_en ? item.condition_en : item.condition}</p>
-              <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${item.status === "approved" ? "bg-green-100 text-green-700" : item.status === "rejected" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}`}>
-                {item.status === "approved" ? label("Approved", "承認済み") : item.status === "rejected" ? label("Rejected", "却下") : label("Pending", "審査中")}
-              </span>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium ${item.status === "approved" ? "bg-green-100 text-green-700" : item.status === "rejected" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}`}>
+                  {item.status === "approved" ? label("Approved", "承認済み") : item.status === "rejected" ? label("Rejected", "却下") : label("Pending", "審査中")}
+                </span>
+                <span className="inline-block text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
+                  {item.post_type === "wanted"
+                    ? t.marketplace.postTypes.wanted
+                    : t.marketplace.postTypes.selling}
+                </span>
+              </div>
             </div>
             <div className="flex gap-2 flex-shrink-0">
               <Button variant="outline" size="sm" className="rounded-xl gap-1" onClick={() => handleEdit(item)}>
@@ -1894,6 +1904,7 @@ function ShopListingsManager() {
   const { t, lang } = useTranslation();
   const [listings, setListings] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [sideFilter, setSideFilter] = useState<"all" | "available" | "wanted">("all");
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -1935,26 +1946,55 @@ function ShopListingsManager() {
     rejected: "bg-red-100 text-red-600",
   };
 
-  const filtered = statusFilter === "all" ? listings : listings.filter((l) => l.status === statusFilter);
+  // Rows created before the post_type migration count as "available"
+  const sideOf = (l: any) => (l.post_type === "wanted" ? "wanted" : "available");
+  const filtered = listings.filter(
+    (l) =>
+      (statusFilter === "all" || l.status === statusFilter) &&
+      (sideFilter === "all" || sideOf(l) === sideFilter),
+  );
   const countOf = (s: string) => listings.filter((l) => l.status === s).length;
+  const sideCountOf = (s: string) => listings.filter((l) => sideOf(l) === s).length;
   const filterChips: { value: typeof statusFilter; label: string; count: number }[] = [
     { value: "all",      label: lang === "ja" ? "すべて" : "All",       count: listings.length },
     { value: "pending",  label: t.dashboard.statusPending,             count: countOf("pending") },
     { value: "approved", label: t.dashboard.statusApproved,            count: countOf("approved") },
     { value: "rejected", label: t.dashboard.statusRejected,            count: countOf("rejected") },
   ];
+  const sideChips: { value: typeof sideFilter; label: string; count: number }[] = [
+    { value: "all",       label: lang === "ja" ? "全サイド" : "Both sides", count: listings.length },
+    { value: "available", label: t.shops.postTypes.available,               count: sideCountOf("available") },
+    { value: "wanted",    label: t.shops.postTypes.wanted,                  count: sideCountOf("wanted") },
+  ];
 
   return (
     <div>
       <h2 className="text-xl font-bold mb-6">{t.admin.tabShops}</h2>
 
-      <div className="flex gap-2 mb-6 flex-wrap">
+      <div className="flex gap-2 mb-3 flex-wrap">
         {filterChips.map((chip) => (
           <button
             key={chip.value}
             onClick={() => setStatusFilter(chip.value)}
             className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors ${
               statusFilter === chip.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {chip.label} ({chip.count})
+          </button>
+        ))}
+      </div>
+
+      {/* Available (For Rent / Takeover) vs Wanted (Looking for Shop / Business) */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {sideChips.map((chip) => (
+          <button
+            key={chip.value}
+            onClick={() => setSideFilter(chip.value)}
+            className={`px-4 py-2 rounded-full text-xs font-semibold border transition-colors ${
+              sideFilter === chip.value
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-background text-muted-foreground border-border hover:text-foreground"
             }`}
           >
             {chip.label} ({chip.count})
@@ -1978,6 +2018,11 @@ function ShopListingsManager() {
                     <h3 className="font-bold text-sm">{listing.title}</h3>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/15 font-semibold">
                       {t.shops.types[listing.listing_type] ?? listing.listing_type}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">
+                      {sideOf(listing) === "wanted"
+                        ? t.shops.postTypes.wanted
+                        : t.shops.postTypes.available}
                     </span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${statusBadgeCls[listing.status] || "bg-muted text-muted-foreground"}`}>
                       {listing.status}
@@ -2019,6 +2064,197 @@ function ShopListingsManager() {
                   </div>
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Community forum moderation: pin / lock / hide / delete threads.
+ * Reads with `all=true` so hidden threads stay visible to admins.
+ */
+function CommunityManager() {
+  const { t, lang } = useTranslation();
+  const c = t.community;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [threads, setThreads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notReady, setNotReady] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const fetchThreads = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await authFetch("/api/community/threads?all=true&limit=50&sort=activity");
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        setNotReady(payload?.code === "COMMUNITY_NOT_READY");
+        setThreads([]);
+        return;
+      }
+      setNotReady(false);
+      setThreads(Array.isArray(payload?.threads) ? payload.threads : []);
+    } catch {
+      setThreads([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchThreads(); }, [fetchThreads]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patchThread = async (id: string, patch: Record<string, any>) => {
+    await authFetch(`/api/community/threads/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    });
+    fetchThreads();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(c.thread.deleteConfirm)) return;
+    await authFetch(`/api/community/threads/${encodeURIComponent(id)}`, { method: "DELETE" });
+    fetchThreads();
+  };
+
+  const filtered =
+    categoryFilter === "all" ? threads : threads.filter((th) => th.category === categoryFilter);
+
+  const categoryChips = [
+    { value: "all", label: c.allCategories, count: threads.length },
+    ...COMMUNITY_CATEGORIES.map((key) => ({
+      value: key as string,
+      label: c.categories[key] ?? key,
+      count: threads.filter((th) => th.category === key).length,
+    })),
+  ];
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-6">{t.admin.tabCommunity}</h2>
+
+      {notReady && (
+        <div role="alert" className="mb-6 rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold leading-snug">{c.dbBanner}</p>
+        </div>
+      )}
+
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {categoryChips.map((chip) => (
+          <button
+            key={chip.value}
+            onClick={() => setCategoryFilter(chip.value)}
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors ${
+              categoryFilter === chip.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {chip.label} ({chip.count})
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-16 text-muted-foreground text-sm">{t.common.loading}</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <MessagesSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+          <p>{c.noThreads}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((thread) => (
+            <div key={thread.id} className="bg-card border p-5">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <h3 className="font-bold text-sm">{thread.title}</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/15 font-semibold">
+                  {c.categories[thread.category] ?? thread.category}
+                </span>
+                {thread.pinned && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                    {c.pinned}
+                  </span>
+                )}
+                {thread.locked && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-semibold">
+                    {c.locked}
+                  </span>
+                )}
+                {thread.status !== "active" && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">
+                    {c.hidden}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {[
+                  thread.author_name,
+                  c.replyCount(thread.reply_count ?? 0),
+                  c.viewCount(thread.view_count ?? 0),
+                  new Date(thread.created_at).toLocaleDateString(lang === "ja" ? "ja-JP" : "en-SG"),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{thread.content}</p>
+              {Array.isArray(thread.tags) && thread.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {thread.tags.map((tag: string) => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Button variant="outline" size="sm" className="rounded-xl gap-1" asChild>
+                  <a href={`/community/${thread.id}`} target="_blank" rel="noopener noreferrer">
+                    <Eye className="h-3 w-3" /> {t.common.view}
+                  </a>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl gap-1"
+                  onClick={() => patchThread(thread.id, { pinned: !thread.pinned })}
+                >
+                  <Pin className="h-3 w-3" /> {thread.pinned ? c.admin.unpin : c.admin.pin}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl gap-1"
+                  onClick={() => patchThread(thread.id, { locked: !thread.locked })}
+                >
+                  <Lock className="h-3 w-3" /> {thread.locked ? c.admin.unlock : c.admin.lock}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl gap-1"
+                  onClick={() =>
+                    patchThread(thread.id, {
+                      status: thread.status === "active" ? "hidden" : "active",
+                    })
+                  }
+                >
+                  {thread.status === "active" ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  {thread.status === "active" ? c.admin.hide : c.admin.unhide}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl gap-1 text-destructive"
+                  onClick={() => handleDelete(thread.id)}
+                >
+                  <Trash2 className="h-3 w-3" /> {t.admin.delete}
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -3224,7 +3460,8 @@ function HomeVideoManager() {
           if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
         });
         xhr.addEventListener("load", () => {
-          xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`HTTP ${xhr.status}`));
         });
         xhr.addEventListener("error", () => reject(new Error("Upload failed")));
         xhr.open("PUT", signed.signedUrl);
@@ -4400,9 +4637,12 @@ function LinksManager() {
  * Detects YouTube / Vimeo embeds and falls back to a native <video> player.
  */
 function VideoPreview({ url }: { url: string }) {
+  // Every hook has to run before the first early return: when `url` goes from
+  // empty to set, a hook called after that return changes the hook order between
+  // renders and React throws "rendered more hooks than during the previous render".
+  const [loadFailed, setLoadFailed] = useState(false);
   if (!url) return null;
   const videoType = inferVideoMimeType({ url });
-  const [loadFailed, setLoadFailed] = useState(false);
 
   // YouTube
   const ytMatch =

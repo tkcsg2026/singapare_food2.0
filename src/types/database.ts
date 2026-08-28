@@ -51,6 +51,19 @@ export interface Database {
         Insert: Omit<ShopListingRow, "id" | "created_at">;
         Update: Partial<ShopListingRow>;
       };
+      community_threads: {
+        Row: CommunityThreadRow;
+        Insert: Omit<
+          CommunityThreadRow,
+          "id" | "created_at" | "updated_at" | "reply_count" | "view_count" | "last_reply_at"
+        >;
+        Update: Partial<CommunityThreadRow>;
+      };
+      community_replies: {
+        Row: CommunityReplyRow;
+        Insert: Omit<CommunityReplyRow, "id" | "created_at" | "updated_at">;
+        Update: Partial<CommunityReplyRow>;
+      };
     };
   };
 }
@@ -164,6 +177,12 @@ export interface SupplierProductRow {
 export interface MarketplaceItemRow {
   id: string;
   slug: string;
+  /**
+   * "selling" = item offered for sale, "wanted" = someone looking to buy.
+   * Optional because rows created before the post_type migration (and the mock
+   * fallback data) have no value; treat a missing value as "selling".
+   */
+  post_type?: MarketplacePostType;
   title: string;
   title_en?: string;
   price: number;
@@ -232,6 +251,12 @@ export interface ReportRow {
 export interface ShopListingRow {
   id: string;
   slug: string;
+  /**
+   * "available" = For Rent / Takeover, "wanted" = Looking for Shop / Business.
+   * Optional because rows created before the post_type migration have no value;
+   * treat a missing value as "available".
+   */
+  post_type?: ShopPostType;
   title: string;
   /** "rent" = shop for rent, "takeover" = business takeover, "both" = rent or takeover */
   listing_type: "rent" | "takeover" | "both";
@@ -258,4 +283,43 @@ export interface ShopListingRow {
   status: "approved" | "pending" | "rejected";
   reject_reason: string | null;
   created_at: string;
+}
+
+/** Offer vs. seek sides of the Used F&B Equipment board. */
+export type MarketplacePostType = "selling" | "wanted";
+
+/** Offer vs. seek sides of the Shop / Takeover board. */
+export type ShopPostType = "available" | "wanted";
+
+export interface CommunityThreadRow {
+  id: string;
+  title: string;
+  content: string;
+  /** One of COMMUNITY_CATEGORIES in @/lib/community */
+  category: string;
+  tags: string[];
+  author_id: string | null;
+  author_name: string;
+  author_avatar: string;
+  reply_count: number;
+  view_count: number;
+  /** Falls back to created_at while a thread has no replies. */
+  last_reply_at: string;
+  pinned: boolean;
+  locked: boolean;
+  status: "active" | "hidden" | "deleted";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommunityReplyRow {
+  id: string;
+  thread_id: string;
+  content: string;
+  author_id: string | null;
+  author_name: string;
+  author_avatar: string;
+  status: "active" | "deleted";
+  created_at: string;
+  updated_at: string;
 }

@@ -395,9 +395,21 @@ const Dashboard = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <h3 className="font-bold text-sm truncate">{item.title}</h3>
+                              {item.post_type === "wanted" && (
+                                <span className="text-[11px] px-2 py-0.5 font-semibold bg-blue-600 text-white">
+                                  {t.marketplace.wantedBadge}
+                                </span>
+                              )}
                               {statusBadge(item.status)}
                             </div>
-                            <p className="text-xl font-black text-primary">S${Number(item.price).toLocaleString()}</p>
+                            <p className="text-xl font-black text-primary">
+                              {item.post_type === "wanted" && (
+                                <span className="text-sm font-semibold text-muted-foreground">
+                                  {t.marketplace.wantedBudget}:{" "}
+                                </span>
+                              )}
+                              S${Number(item.price).toLocaleString()}
+                            </p>
                             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                               <span className="flex items-center gap-1">
                                 <Eye className="h-3 w-3" />{item.area}
@@ -477,6 +489,11 @@ const Dashboard = () => {
                               <span className="text-[11px] px-2 py-0.5 font-semibold bg-primary/10 text-primary border border-primary/15">
                                 {t.shops.types[listing.listing_type] ?? listing.listing_type}
                               </span>
+                              {listing.post_type === "wanted" && (
+                                <span className="text-[11px] px-2 py-0.5 font-semibold bg-blue-600 text-white">
+                                  {t.shops.wantedBadge}
+                                </span>
+                              )}
                               {statusBadge(listing.status)}
                             </div>
                             {(listing.monthly_rent || listing.asking_price) && (

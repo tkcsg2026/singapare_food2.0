@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient, createAdminSupabaseClient, requireAuth } from "@/lib/supabase-server";
+import {
+  createServerSupabaseClient,
+  createAdminSupabaseClient,
+  isUnknownColumnError,
+  requireAuth,
+} from "@/lib/supabase-server";
 import { sendNewShopListingNotification } from "@/lib/email";
 
 const LISTING_TYPES = ["rent", "takeover", "both"] as const;
+/** "available" = For Rent / Takeover, "wanted" = Looking for Shop / Business */
+const POST_TYPES = ["available", "wanted"] as const;
 
 /** Postgres 42P01 = relation does not exist; PGRST205 = table not in PostgREST schema cache */
 function isTableMissing(error: { code?: string; message?: string } | null): boolean {
@@ -21,6 +28,7 @@ function parseLimit(raw: string | null, max = 100): number | null {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const listingType = searchParams.get("listing_type");
+  const postType = searchParams.get("post_type");
   const all = searchParams.get("all") === "true";
   const status = searchParams.get("status") || "approved";
   const seller_id = searchParams.get("seller_id");
@@ -52,6 +60,9 @@ export async function GET(req: NextRequest) {
   }
   if (listingType && (LISTING_TYPES as readonly string[]).includes(listingType)) {
     query = query.eq("listing_type", listingType);
+  }
+  if (postType && (POST_TYPES as readonly string[]).includes(postType)) {
+    query = query.eq("post_type", postType);
   }
   query = query.order("created_at", { ascending: false });
   if (limit && !seller_id && !all) query = query.limit(limit);
@@ -93,10 +104,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Description is required" }, { status: 400 });
   }
 
+  // Rows posted before the post_type migration are "available"; keep that as
+  // the default so an older client that omits the field still behaves.
+  const postType = POST_TYPES.includes(body?.post_type) ? body.post_type : "available";
+
   // Whitelist columns so arbitrary fields can't be injected
   const row = {
     slug: body.slug,
     title: body.title,
+    post_type: postType,
     listing_type: body.listing_type,
     location: body.location || "",
     building: body.building || "",
@@ -121,7 +137,13 @@ export async function POST(req: NextRequest) {
     status: "pending",
   };
 
-  const { data, error } = await supabase.from("shop_listings").insert(row).select().single();
+  let { data, error } = await supabase.from("shop_listings").insert(row).select().single();
+  if (error && isUnknownColumnError(error, "post_type")) {
+    // The post_type migration has not been applied yet — post the listing
+    // without it rather than failing, so the board keeps working meanwhile.
+    const { post_type: _postType, ...legacyRow } = row;
+    ({ data, error } = await supabase.from("shop_listings").insert(legacyRow).select().single());
+  }
   if (error) {
     if (isTableMissing(error)) {
       return NextResponse.json(
@@ -137,7 +159,10 @@ export async function POST(req: NextRequest) {
     await sendNewShopListingNotification({
       title: row.title,
       sellerName: row.seller_name || "Unknown",
-      listingType: row.listing_type,
+      listingType:
+        row.post_type === "wanted"
+          ? `${row.listing_type}（募集 / Wanted）`
+          : row.listing_type,
     });
   } catch {
     // Email failure must not block the listing submission

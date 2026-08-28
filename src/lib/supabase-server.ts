@@ -107,6 +107,26 @@ export async function requireAdmin(
 }
 
 /**
+ * True when a write failed only because `column` is not in the table / PostgREST
+ * schema cache yet — Postgres 42703 (undefined_column) or PostgREST PGRST204.
+ *
+ * Lets a route that writes a newly-added column retry without it, so deploying
+ * the code before running the migration never breaks an existing flow.
+ */
+export function isUnknownColumnError(error: unknown, column: string): boolean {
+  if (!error || typeof error !== "object") return false;
+  const o = error as { code?: string; message?: string; details?: string; hint?: string };
+  const blob = [o.message, o.details, o.hint].filter(Boolean).join(" ").toLowerCase();
+  if (!blob.includes(column.toLowerCase())) return false;
+  if (o.code === "42703" || o.code === "PGRST204") return true;
+  return (
+    blob.includes("does not exist") ||
+    blob.includes("could not find") ||
+    blob.includes("schema cache")
+  );
+}
+
+/**
  * Appends a row to the audit_logs table.
  * Silently ignores errors so logging never blocks the main operation.
  */

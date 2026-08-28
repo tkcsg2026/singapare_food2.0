@@ -5,7 +5,21 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist"] },
+  {
+    ignores: [
+      "node_modules",
+      // Next.js build output. The old "dist" entry is a leftover from the Vite
+      // template — nothing is emitted there, so generated bundles under .next
+      // were being linted and reported thousands of errors nobody can fix.
+      ".next",
+      "dist",
+      "out",
+      "next-env.d.ts",
+      // Stale copy of the whole project extracted from singapore_food2.0.zip.
+      // Linting it duplicates every finding against files that are never built.
+      "singapare_food2.0",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

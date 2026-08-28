@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, Ruler } from "lucide-react";
+import { MapPin, Ruler, Search } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 interface ShopListingCardProps {
@@ -7,6 +7,8 @@ interface ShopListingCardProps {
     slug: string;
     image: string;
     title: string;
+    /** Missing on rows created before the post_type migration — treated as "available". */
+    post_type?: "available" | "wanted";
     listing_type: "rent" | "takeover" | "both";
     location: string;
     building: string;
@@ -21,9 +23,11 @@ interface ShopListingCardProps {
 export function ShopListingCard({ listing, onRequireLogin, lazyImage = false }: ShopListingCardProps) {
   const { t } = useTranslation();
 
+  const isWanted = listing.post_type === "wanted";
   const typeLabel = t.shops.types[listing.listing_type] ?? listing.listing_type;
   const place = [listing.location, listing.building].filter(Boolean).join(" · ");
-  // Rent leads for rent listings; takeover-only listings show the asking price instead
+  // Rent leads for rent listings; takeover-only listings show the asking price
+  // instead. On a "wanted" post the same fields carry the poster's budget.
   const price =
     listing.listing_type === "takeover"
       ? listing.asking_price || listing.monthly_rent
@@ -49,6 +53,12 @@ export function ShopListingCard({ listing, onRequireLogin, lazyImage = false }: 
           <span className="absolute top-2 left-2 text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground font-semibold shadow-sm">
             {typeLabel}
           </span>
+          {isWanted && (
+            <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-blue-600 text-white font-semibold shadow-sm">
+              <Search className="h-2.5 w-2.5" />
+              {t.shops.wantedBadge}
+            </span>
+          )}
         </div>
         <div className="p-3 flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
           {price && <p className="font-bold text-sm sm:text-base text-primary flex-shrink-0 truncate">{price}</p>}

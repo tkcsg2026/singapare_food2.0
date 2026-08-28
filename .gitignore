@@ -13,6 +13,11 @@ dist
 dist-ssr
 *.local
 
+# Stale copy of the project extracted from singapore_food2.0.zip. Kept out of
+# git (and out of lint/typecheck — see eslint.config.js and tsconfig.json) so it
+# does not report duplicate errors against files that are never built.
+singapare_food2.0/
+
 # Editor directories and files
 .claude
 .vscode/*

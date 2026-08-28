@@ -33,8 +33,10 @@ export function useFetch<T>(
       if (signal?.aborted) return;
       setError(err instanceof Error ? err.message : "Failed to fetch");
     } finally {
-      if (signal?.aborted) return;
-      setLoading(false);
+      // Written as a guard rather than an early `return`: returning from a
+      // `finally` block discards whatever the try/catch was already returning
+      // or throwing, which would silently swallow errors added here later.
+      if (!signal?.aborted) setLoading(false);
     }
   }, [url, cache]);
 

@@ -12,6 +12,7 @@ const staticRoutes: MetadataRoute.Sitemap = [
   { url: `${siteUrl}/about`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   { url: `${siteUrl}/contact`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
   { url: `${siteUrl}/jobs`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.55 },
+  { url: `${siteUrl}/community`, lastModified: new Date(), changeFrequency: "daily", priority: 0.7 },
   { url: `${siteUrl}/plans`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },
 ];
 
@@ -22,9 +23,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let marketplaceRoutes: MetadataRoute.Sitemap = [];
   let newsRoutes: MetadataRoute.Sitemap = [];
   let shopRoutes: MetadataRoute.Sitemap = [];
+  let communityRoutes: MetadataRoute.Sitemap = [];
 
   if (supabase) {
-    const [suppliersResult, marketplaceResult, newsResult, shopsResult] = await Promise.all([
+    const [suppliersResult, marketplaceResult, newsResult, shopsResult, communityResult] = await Promise.all([
       supabase.from("suppliers").select("slug, created_at").order("created_at", { ascending: false }),
       supabase
         .from("marketplace_items")
@@ -41,6 +43,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .select("slug, created_at")
         .eq("status", "approved")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("community_threads")
+        .select("id, last_reply_at, created_at")
+        .eq("status", "active")
+        .order("last_reply_at", { ascending: false })
+        .limit(500),
     ]);
 
     supplierRoutes = (suppliersResult.data ?? []).map((s) => ({
@@ -70,7 +78,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "weekly",
       priority: 0.6,
     }));
+
+    // Absent until the community migration runs — an error just leaves this empty.
+    communityRoutes = (communityResult.data ?? []).map((thread) => ({
+      url: `${siteUrl}/community/${thread.id}`,
+      lastModified: new Date(thread.last_reply_at || thread.created_at),
+      changeFrequency: "weekly",
+      priority: 0.5,
+    }));
   }
 
-  return [...staticRoutes, ...supplierRoutes, ...marketplaceRoutes, ...newsRoutes, ...shopRoutes];
+  return [
+    ...staticRoutes,
+    ...supplierRoutes,
+    ...marketplaceRoutes,
+    ...newsRoutes,
+    ...shopRoutes,
+    ...communityRoutes,
+  ];
 }

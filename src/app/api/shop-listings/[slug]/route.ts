@@ -9,6 +9,7 @@ import { sendMarketplaceRejectionEmail } from "@/lib/email";
 
 const EDITABLE_FIELDS = [
   "title",
+  "post_type",
   "listing_type",
   "location",
   "building",
@@ -77,6 +78,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug
   }
   if (typeof update.status === "string" && !["pending", "approved", "rejected"].includes(update.status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+  if ("post_type" in update && !["available", "wanted"].includes(String(update.post_type))) {
+    return NextResponse.json({ error: "Invalid post type" }, { status: 400 });
   }
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No editable fields in request" }, { status: 400 });
