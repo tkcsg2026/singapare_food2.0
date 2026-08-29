@@ -264,6 +264,8 @@ const ja: Translations = {
   shops: {
     title: "店舗賃貸・居抜き",
     subtitle: "シンガポールの飲食店舗物件（賃貸・居抜き譲渡）を探す",
+    homeSection: "店舗賃貸・居抜き",
+    homeSectionSubtitle: "最新の店舗賃貸・居抜き譲渡の物件情報",
     searchPlaceholder: "エリア・建物・業態で検索...",
     allTypes: "全種別",
     types: {
@@ -431,6 +433,8 @@ const ja: Translations = {
       "シンガポールのF&B関係者同士で、店舗運営の相談やサプライヤー情報を交換できる掲示板です。過去の質問と回答は蓄積され、あとから検索して参考にできます。",
     metaDescription:
       "シンガポールのF&B業界向け掲示板。店舗運営、サプライヤー、スタッフ、設備、コラボレーションについて情報交換できます。",
+    homeSection: "F&Bコミュニティ",
+    homeSectionSubtitle: "シンガポールのF&B関係者による最新の質問・情報交換",
     newThread: "新しいスレッド",
     searchPlaceholder: "スレッドを検索...",
     allCategories: "全カテゴリー",

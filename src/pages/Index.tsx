@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { Search, ArrowRight, ShoppingBag, TrendingUp, Sparkles, Newspaper, Globe, ExternalLink, ChevronLeft, ChevronRight, Briefcase, Play } from "lucide-react";
+import { Search, ArrowRight, ShoppingBag, TrendingUp, Sparkles, Newspaper, Globe, ExternalLink, ChevronLeft, ChevronRight, Briefcase, Play, Store, MessagesSquare, MessageSquare, Eye, Pin } from "lucide-react";
 import s1 from "@/assets/s1.jpg";
 import s2 from "@/assets/s2.jpg";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
@@ -9,15 +9,35 @@ import { Button } from "@/components/ui/button";
 import Layout from "@/components/Layout";
 import { SupplierCard } from "@/components/SupplierCard";
 import { MarketplaceCard } from "@/components/MarketplaceCard";
+import { ShopListingCard } from "@/components/ShopListingCard";
 import { useFetch } from "@/hooks/useSupabaseData";
 import { useInView } from "@/hooks/useInView";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useLoginPrompt } from "@/components/LoginPromptModal";
 import { AnimatedGridItem } from "@/components/AnimatedGridItem";
 import type { PlanCounts } from "@/lib/plans";
 import { buildSupplierTagDisplayMaps, getCategoryDisplayName } from "@/lib/category-display";
+import { formatRelativeTime } from "@/lib/community";
 import type { HomePagePayload } from "@/types/home";
-import type { SupplierRow, MarketplaceItemRow, CategoryRow, NewsArticleRow, JobNoticeRow } from "@/types/database";
+import type {
+  SupplierRow,
+  MarketplaceItemRow,
+  CategoryRow,
+  NewsArticleRow,
+  JobNoticeRow,
+  ShopListingRow,
+  CommunityThreadRow,
+} from "@/types/database";
+
+const COMMUNITY_EXCERPT_CHARS = 110;
+
+function threadExcerpt(text: string): string {
+  const flat = (text || "").replace(/\s+/g, " ").trim();
+  return flat.length > COMMUNITY_EXCERPT_CHARS
+    ? `${flat.slice(0, COMMUNITY_EXCERPT_CHARS)}…`
+    : flat;
+}
 
 function SupplierSkeleton() {
   return (
@@ -92,6 +112,9 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const { t, lang } = useTranslation();
+  // Shop listing detail pages are behind a login, so the home cards use the
+  // same guard as the /shops board.
+  const { requireLogin, loginPromptModal } = useLoginPrompt();
   // Supabase auth redirects land on the home page when /reset-password is not
   // in the allowed Redirect URLs list. Use a full-page redirect so Supabase
   // can process the token fresh on /reset-password (avoids session loss with
@@ -118,6 +141,8 @@ const Index = () => {
   const recentItems: MarketplaceItemRow[] = homeData?.marketplace ?? [];
   const latestNews: NewsArticleRow[] = homeData?.news ?? [];
   const latestJobNotices: JobNoticeRow[] = homeData?.jobs ?? [];
+  const latestShopListings: ShopListingRow[] = homeData?.shopListings ?? [];
+  const latestThreads: CommunityThreadRow[] = homeData?.communityThreads ?? [];
   const categories: CategoryRow[] = homeData?.categories ?? [];
   const tagCategories: CategoryRow[] = homeData?.tagCategories ?? [];
   const promoVideoUrl = homeData?.promoVideoUrl ?? "";
@@ -438,9 +463,126 @@ const Index = () => {
         </section>
       )}
 
-      {/* 4. Latest News */}
+      {/* 5. Shop / Takeover */}
+      {latestShopListings.length > 0 && (
+        <section className="bg-muted py-10 md:py-14 overflow-hidden w-full opacity-0-init animate-fade-in-up reveal-stagger-5">
+          <div className="container min-w-0">
+            <div className="flex items-start justify-between mb-6 gap-4 min-w-0">
+              <div className="min-w-0">
+                <h2 className="section-title text-xl md:text-2xl flex items-center gap-2 min-w-0">
+                  <Store className="h-5 w-5 text-primary flex-shrink-0" />
+                  <span className="truncate">{t.shops.homeSection}</span>
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1 break-words-safe">
+                  {t.shops.homeSectionSubtitle}
+                </p>
+              </div>
+              <Link
+                href="/shops"
+                className="link-more flex-shrink-0 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90 hover:text-white"
+              >
+                {t.common.viewAll} <ArrowRight className="h-3.5 w-3.5 link-more-arrow" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-stretch min-w-0">
+              {latestShopListings.map((listing, i) => (
+                <AnimatedGridItem key={listing.id} index={i}>
+                  <ShopListingCard listing={listing} onRequireLogin={requireLogin} lazyImage />
+                </AnimatedGridItem>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 6. F&B Community */}
+      {latestThreads.length > 0 && (
+        <section className="container py-10 md:py-12 min-w-0 overflow-hidden opacity-0-init animate-fade-in-up reveal-stagger-6">
+          <div className="flex items-start justify-between mb-6 gap-4 min-w-0">
+            <div className="min-w-0">
+              <h2 className="section-title text-xl md:text-2xl flex items-center gap-2 min-w-0">
+                <MessagesSquare className="h-5 w-5 text-primary flex-shrink-0" />
+                <span className="truncate">{t.community.homeSection}</span>
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1 break-words-safe">
+                {t.community.homeSectionSubtitle}
+              </p>
+            </div>
+            <Link
+              href="/community"
+              className="link-more flex-shrink-0 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90 hover:text-white"
+            >
+              {t.common.viewAll} <ArrowRight className="h-3.5 w-3.5 link-more-arrow" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch min-w-0">
+            {latestThreads.map((thread, i) => {
+              const categoryLabel = t.community.categories[thread.category] ?? thread.category;
+              const summary = threadExcerpt(thread.content);
+              return (
+                <AnimatedGridItem key={thread.id} index={i} className="h-full">
+                  <Link
+                    href={`/community/${thread.id}`}
+                    className="group flex h-full flex-col rounded-xl border bg-card p-4 min-w-0 transition-all duration-300 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5"
+                  >
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2 min-w-0">
+                      {thread.pinned && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/25">
+                          <Pin className="h-2.5 w-2.5" />
+                          {t.community.pinned}
+                        </span>
+                      )}
+                      <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 truncate max-w-[60%]">
+                        {categoryLabel}
+                      </span>
+                      <span className="ml-auto text-[11px] text-muted-foreground flex-shrink-0">
+                        {formatRelativeTime(thread.last_reply_at || thread.created_at, lang)}
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-sm leading-snug line-clamp-2 break-words-safe transition-colors group-hover:text-primary">
+                      {thread.title}
+                    </h3>
+                    {summary && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed break-words-safe">
+                        {summary}
+                      </p>
+                    )}
+                    {thread.tags?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2.5">
+                        {thread.tags.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border truncate max-w-[120px]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 mt-auto pt-3 text-[11px] text-muted-foreground min-w-0">
+                      <span className="font-medium text-foreground/80 truncate min-w-0">
+                        {thread.author_name}
+                      </span>
+                      <span className="flex items-center gap-1 flex-shrink-0">
+                        <MessageSquare className="h-3 w-3" />
+                        {thread.reply_count}
+                      </span>
+                      <span className="flex items-center gap-1 flex-shrink-0">
+                        <Eye className="h-3 w-3" />
+                        {thread.view_count}
+                      </span>
+                    </div>
+                  </Link>
+                </AnimatedGridItem>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 7. Latest News */}
       {latestNews.length > 0 && (
-        <section className="container py-10 md:py-12 min-w-0 overflow-hidden opacity-0-init animate-fade-in-up reveal-stagger-5">
+        <section className="container py-10 md:py-12 min-w-0 overflow-hidden opacity-0-init animate-fade-in-up reveal-stagger-7">
           <div className="flex items-center justify-between mb-6 gap-4 min-w-0">
             <h2 className="section-title text-xl md:text-2xl flex items-center gap-2 min-w-0">
               <Newspaper className="h-5 w-5 text-primary flex-shrink-0" />
@@ -495,9 +637,9 @@ const Index = () => {
         </section>
       )}
 
-      {/* 5. Links (リンク集) */}
+      {/* 8. Links (リンク集) */}
       {featuredLinks.length > 0 && (
-        <section className="bg-muted py-10 md:py-12 w-full overflow-hidden opacity-0-init animate-fade-in-up reveal-stagger-6">
+        <section className="bg-muted py-10 md:py-12 w-full overflow-hidden opacity-0-init animate-fade-in-up reveal-stagger-8">
           <div className="container min-w-0">
             <div className="flex items-center justify-between mb-2 gap-4 min-w-0">
               <h2 className="section-title text-xl md:text-2xl flex items-center gap-2 min-w-0">
@@ -620,6 +762,7 @@ const Index = () => {
         </section>
       )}
 
+      {loginPromptModal}
     </Layout>
   );
 };

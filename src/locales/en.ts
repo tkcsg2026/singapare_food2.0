@@ -262,6 +262,8 @@ const en = {
   shops: {
     title: "Shops for Rent / Takeover",
     subtitle: "Find F&B shop spaces for rent and businesses for takeover across Singapore",
+    homeSection: "Shop / Takeover",
+    homeSectionSubtitle: "Latest F&B spaces for rent and businesses up for takeover",
     searchPlaceholder: "Search by location, building, cuisine...",
     allTypes: "All Listing Types",
     types: {
@@ -429,6 +431,8 @@ const en = {
       "Ask questions, share supplier tips and swap notes with Singapore's F&B people. Every thread stays searchable, so answers keep helping the next person.",
     metaDescription:
       "A discussion board for Singapore's F&B industry — shop operations, suppliers, staff, equipment and collaboration.",
+    homeSection: "F&B Community",
+    homeSectionSubtitle: "Latest questions and discussions from F&B people in Singapore",
     newThread: "New Thread",
     searchPlaceholder: "Search threads...",
     allCategories: "All Categories",

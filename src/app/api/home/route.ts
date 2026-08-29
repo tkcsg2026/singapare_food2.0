@@ -8,9 +8,11 @@ import { marketplaceItems as mockMarketplace } from "@/data/mockData";
 import type { PlanCounts } from "@/lib/plans";
 import type {
   CategoryRow,
+  CommunityThreadRow,
   JobNoticeRow,
   MarketplaceItemRow,
   NewsArticleRow,
+  ShopListingRow,
   SupplierRow,
 } from "@/types/database";
 import type { HomePagePayload } from "@/types/home";
@@ -18,6 +20,8 @@ import type { HomePagePayload } from "@/types/home";
 const HOME_MARKETPLACE_LIMIT = 6;
 const HOME_NEWS_LIMIT = 5;
 const HOME_JOBS_LIMIT = 3;
+const HOME_SHOP_LIMIT = 4;
+const HOME_COMMUNITY_LIMIT = 4;
 
 const SUPPLIER_CARD_COLUMNS =
   "id,slug,name,name_ja,logo,category,category_ja,category_2,category_2_ja,category_3,category_3_ja,tags,area,area_ja,description,description_ja,whatsapp,whatsapp_contact_name,plan,hidden";
@@ -98,6 +102,8 @@ export async function GET() {
       marketplace: mockMarketplace.slice(0, HOME_MARKETPLACE_LIMIT) as unknown as MarketplaceItemRow[],
       news: [],
       jobs: [],
+      shopListings: [],
+      communityThreads: [],
       links: (await fetchPublicPortalLinks(null, { homeCardsOnly: true })) as Record<string, unknown>[],
       promoVideoUrl: "",
     };
@@ -112,6 +118,8 @@ export async function GET() {
     marketplaceRes,
     newsRes,
     jobsRes,
+    shopListingsRes,
+    communityRes,
     links,
     promoRes,
   ] = await Promise.all([
@@ -137,6 +145,19 @@ export async function GET() {
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(HOME_JOBS_LIMIT * 3),
+    supabase
+      .from("shop_listings")
+      .select("*")
+      .eq("status", "approved")
+      .order("created_at", { ascending: false })
+      .limit(HOME_SHOP_LIMIT),
+    supabase
+      .from("community_threads")
+      .select("*")
+      .eq("status", "active")
+      .order("pinned", { ascending: false })
+      .order("last_reply_at", { ascending: false })
+      .limit(HOME_COMMUNITY_LIMIT),
     fetchPublicPortalLinks(supabase, { homeCardsOnly: true }),
     supabase.from("site_settings").select("value").eq("key", "promo_video_url").maybeSingle(),
   ]);
@@ -174,6 +195,16 @@ export async function GET() {
     .filter((n) => (n.post_type ?? "job") === "job")
     .slice(0, HOME_JOBS_LIMIT);
 
+  // Both boards are optional: a portal that has not run the shop / community
+  // migrations still renders the rest of the home page with these sections off.
+  const shopListings = (
+    shopListingsRes.error ? [] : shopListingsRes.data ?? []
+  ) as ShopListingRow[];
+
+  const communityThreads = (
+    communityRes.error ? [] : communityRes.data ?? []
+  ) as CommunityThreadRow[];
+
   const promoVideoUrl =
     typeof promoRes.data?.value === "string" ? promoRes.data.value.trim() : "";
 
@@ -185,6 +216,8 @@ export async function GET() {
     marketplace,
     news,
     jobs,
+    shopListings,
+    communityThreads,
     links: links as Record<string, unknown>[],
     promoVideoUrl,
   };
