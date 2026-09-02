@@ -85,7 +85,11 @@ async function fetchPlanCounts(supabase: NonNullable<ReturnType<typeof createSer
   return { premium: premium ?? 0, standard: standard ?? 0, basic };
 }
 
-export const dynamic = "force-dynamic";
+// The home payload is the same for every visitor, so let Next serve it from its
+// route cache and refresh it in the background once a minute. Previously this
+// was `force-dynamic`, which ran all eleven Supabase queries on every single
+// home page load — the main reason the first paint felt slow.
+export const revalidate = 60;
 
 export async function GET() {
   const supabase = createServerSupabaseClient();

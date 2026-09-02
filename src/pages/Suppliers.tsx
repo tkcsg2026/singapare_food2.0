@@ -41,12 +41,15 @@ const Suppliers = () => {
     router.replace(`/suppliers?${params.toString()}`, { scroll: false });
   };
 
-  const { data: suppliers } = useFetch<SupplierRow[]>("/api/suppliers");
-  const { data: planCountsData } = useFetch<PlanCounts>("/api/suppliers/plan-counts");
+  // These five endpoints are public and send a short public cache header, so
+  // "default" lets the browser reuse them instead of re-downloading the whole
+  // directory on every visit to this page.
+  const { data: suppliers } = useFetch<SupplierRow[]>("/api/suppliers", [], { cache: "default" });
+  const { data: planCountsData } = useFetch<PlanCounts>("/api/suppliers/plan-counts", [], { cache: "default" });
   const planCounts: PlanCounts = planCountsData ?? { premium: 0, standard: 0, basic: 0 };
-  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=supplier");
-  const { data: groupRows } = useFetch<CategoryRow[]>("/api/categories?type=supplier-group");
-  const { data: tagCategories } = useFetch<(CategoryRow & { type: "tag"; label_ja?: string | null })[]>("/api/categories?type=tag");
+  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=supplier", [], { cache: "default" });
+  const { data: groupRows } = useFetch<CategoryRow[]>("/api/categories?type=supplier-group", [], { cache: "default" });
+  const { data: tagCategories } = useFetch<(CategoryRow & { type: "tag"; label_ja?: string | null })[]>("/api/categories?type=tag", [], { cache: "default" });
 
   // Surface every category value used by at least one supplier — including
   // newly-added ones (e.g. "packaging") that haven't been added to the

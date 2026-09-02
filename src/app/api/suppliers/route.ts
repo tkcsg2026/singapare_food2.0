@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createAdminSupabaseClient, requireAdmin } from "@/lib/supabase-server";
+import { jsonWithPublicCache } from "@/lib/api-cache";
 import { suppliers as mockSuppliers } from "@/data/mockData";
 
 // Shape mock data to match DB column names
@@ -45,6 +46,12 @@ export async function GET(req: NextRequest) {
   const includeHidden = searchParams.get("includeHidden") === "1";
   const adminAllowed = includeHidden ? await callerIsAdmin(req) : false;
 
+  // The public directory is the same for everyone, so it can be cached by the
+  // browser and CDN. An includeHidden request depends on the caller's token, so
+  // those responses must never be shared — they stay uncached.
+  const respond = <T,>(payload: T) =>
+    includeHidden ? NextResponse.json(payload) : jsonWithPublicCache(payload);
+
   if (!supabase) {
     let data = mockSuppliers.map(normaliseMock);
     if (!adminAllowed) data = data.filter((s) => !s.hidden);
@@ -54,7 +61,7 @@ export async function GET(req: NextRequest) {
       s.name_ja.includes(q) || s.description_ja.includes(q) || s.category_ja.includes(q)
         || (s as any).category_2_ja?.includes(q) || (s as any).category_3_ja?.includes(q)
     );
-    return NextResponse.json(data);
+    return respond(data);
   }
 
   // Fetch all suppliers; tier ordering + daily-seeded shuffle is applied client-side
@@ -73,14 +80,14 @@ export async function GET(req: NextRequest) {
     if (q) fallback = fallback.filter((s) =>
       s.name_ja.includes(q) || s.description_ja.includes(q)
     );
-    return NextResponse.json(fallback);
+    return respond(fallback);
   }
 
   // Hide rows where hidden=true unless caller is an admin requesting all
   const visible = adminAllowed
     ? data
     : (data as Array<{ hidden?: boolean | null }>).filter((s) => !s.hidden);
-  return NextResponse.json(visible);
+  return respond(visible);
 }
 
 export async function POST(req: NextRequest) {

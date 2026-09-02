@@ -532,10 +532,6 @@ export default function Community() {
             <ArrowLeft className="h-4 w-4 flex-shrink-0" />
             <span className="min-w-0">{t.contact.backHome}</span>
           </Link>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-sm border border-white/20 mb-3">
-            <MessagesSquare className="h-3.5 w-3.5" />
-            {c.badge}
-          </span>
           <h1 className="text-3xl md:text-4xl font-black tracking-tight max-w-3xl drop-shadow-sm">
             {c.pageTitle}
           </h1>

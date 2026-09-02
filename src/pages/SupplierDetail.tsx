@@ -329,7 +329,7 @@ const SupplierDetail = () => {
   const params = useParams();
   const slug = typeof params?.slug === "string" ? params.slug : "";
   const { data: supplier, loading } = useFetch<any>(`/api/suppliers/${slug}`, [slug]);
-  const { data: tagCategories } = useFetch<(CategoryRow & { type: "tag"; label_ja?: string | null })[]>("/api/categories?type=tag");
+  const { data: tagCategories } = useFetch<(CategoryRow & { type: "tag"; label_ja?: string | null })[]>("/api/categories?type=tag", [], { cache: "default" });
   // Default to "products" — owners want their catalog visible first when a
   // visitor lands on the supplier page (request from 5/9 client review).
   const [activeTab, setActiveTab] = useState("products");

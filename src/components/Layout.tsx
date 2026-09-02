@@ -2,6 +2,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import logoImage from "@/assets/logo.png";
 import {
@@ -13,8 +14,15 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { FooterSocialLinks } from "@/components/FooterSocialLinks";
-import { ChatbotWidget } from "@/components/chatbot/ChatbotWidget";
 import { ScrollingBanner } from "@/components/ScrollingBanner";
+
+// The chatbot ships its own message list, scroll area and markdown rendering and
+// is never needed for the first paint. Loading it lazily keeps that code out of
+// the initial bundle of every page, so pages become interactive sooner.
+const ChatbotWidget = dynamic(
+  () => import("@/components/chatbot/ChatbotWidget").then((m) => m.ChatbotWidget),
+  { ssr: false },
+);
 
 /** Circular avatar or default icon */
 function AvatarBadge({ src, alt, size = 32 }: { src?: string | null; alt: string; size?: number }) {

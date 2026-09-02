@@ -57,12 +57,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
+  // Newest reply first — the thread page shows the most recent answers at the
+  // top so readers do not have to scroll to the bottom of a long thread.
   const { data: replies } = await supabase
     .from("community_replies")
     .select("*")
     .eq("thread_id", id)
     .eq("status", "active")
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(REPLY_LIMIT);
 
   if (track) {

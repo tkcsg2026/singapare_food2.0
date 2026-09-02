@@ -15,7 +15,7 @@ const News = () => {
   const [page, setPage] = useState(1);
   const { t, lang } = useTranslation();
   const { data: articles, loading } = useFetch<NewsArticleRow[]>("/api/news");
-  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=news");
+  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=news", [], { cache: "default" });
 
   const filtered = (articles || []).filter(
     (a) => !selectedCategory || a.category === selectedCategory

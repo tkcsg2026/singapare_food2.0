@@ -134,7 +134,9 @@ export async function POST(req: NextRequest) {
     seller_id: auth.userId,
     seller_name: body.seller_name || "",
     seller_whatsapp: body.seller_whatsapp || "",
-    status: "pending",
+    // Shop listings are published straight away — the board has no approval
+    // step, so the person who posts can use their listing immediately.
+    status: "approved",
   };
 
   let { data, error } = await supabase.from("shop_listings").insert(row).select().single();
@@ -154,7 +156,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Notify admin of new pending listing
+  // Notify admin that a new listing went live (no approval step to action)
   try {
     await sendNewShopListingNotification({
       title: row.title,

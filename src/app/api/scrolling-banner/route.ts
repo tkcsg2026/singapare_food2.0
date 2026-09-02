@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createAdminSupabaseClient, requireAdmin } from "@/lib/supabase-server";
+import { jsonWithPublicCache } from "@/lib/api-cache";
 
+/**
+ * Every page in the site renders the marquee, so this endpoint is requested on
+ * each navigation. The banner is identical for all visitors, so serve it with a
+ * public cache header — the browser and CDN then answer most of those requests
+ * without a Supabase round trip.
+ */
 export async function GET() {
   const supabase = createServerSupabaseClient();
   if (!supabase) {
-    return NextResponse.json({
+    return jsonWithPublicCache({
       id: 1,
       text_en: "",
       text_ja: "",
@@ -18,9 +25,9 @@ export async function GET() {
     .eq("id", 1)
     .single();
   if (error || !data) {
-    return NextResponse.json({ id: 1, text_en: "", text_ja: "", is_active: false, speed: 35 });
+    return jsonWithPublicCache({ id: 1, text_en: "", text_ja: "", is_active: false, speed: 35 });
   }
-  return NextResponse.json(data);
+  return jsonWithPublicCache(data);
 }
 
 export async function PUT(req: NextRequest) {

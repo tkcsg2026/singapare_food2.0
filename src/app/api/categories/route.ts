@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient, createAdminSupabaseClient, requireAdmin } from "@/lib/supabase-server";
+import { jsonWithPublicCache } from "@/lib/api-cache";
 import { categories as mockSupplierCats, categoryGroups as mockGroupCats, marketplaceCategories as mockMPCats, tagCategories as mockTagCats } from "@/data/mockData";
 import { resolveCategoryDisplayLabels } from "@/lib/category-display";
 
@@ -22,6 +23,11 @@ function normalizeCategoryRows(rows: any[]) {
   });
 }
 
+/**
+ * Category lists are public, identical for every visitor and change only when an
+ * admin edits them, yet almost every listing page requests one on load. Serving
+ * them with a public cache header lets the browser and CDN answer repeat calls.
+ */
 export async function GET(req: NextRequest) {
   const supabase = createServerSupabaseClient();
   const { searchParams } = new URL(req.url);
@@ -29,7 +35,7 @@ export async function GET(req: NextRequest) {
 
   if (!supabase) {
     const data = type ? mockCategories.filter((c) => c.type === type) : mockCategories;
-    return NextResponse.json(normalizeCategoryRows(data));
+    return jsonWithPublicCache(normalizeCategoryRows(data));
   }
 
   let query = supabase.from("categories").select("*").order("sort_order");
@@ -38,7 +44,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query;
   if (error) {
     const fallback = type ? mockCategories.filter((c) => c.type === type) : mockCategories;
-    return NextResponse.json(normalizeCategoryRows(fallback));
+    return jsonWithPublicCache(normalizeCategoryRows(fallback));
   }
 
   // Deduplicate by (type + value) — prevents accidental cross-type collisions.
@@ -49,7 +55,7 @@ export async function GET(req: NextRequest) {
     seen.add(key);
     return true;
   });
-  return NextResponse.json(normalizeCategoryRows(unique));
+  return jsonWithPublicCache(normalizeCategoryRows(unique));
 }
 
 export async function POST(req: NextRequest) {

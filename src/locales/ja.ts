@@ -370,9 +370,9 @@ const ja: Translations = {
       imageUploadError: "画像のアップロードに失敗しました。もう一度お試しください。",
       agreeTerms: "利用規約に同意する *",
       termsTitle: "利用規約",
-      submit: "掲載する（審査後に公開）",
+      submit: "掲載する",
       submitting: "掲載中...",
-      successMsg: "掲載を受け付けました。管理者の承認後に公開されます。",
+      successMsg: "掲載が完了しました。すぐに公開されます。",
       errorMsg: "エラーが発生しました。",
       notReadyMsg: "店舗物件掲示板は現在準備中です。しばらくしてからお試しください。",
       // どちら側の投稿かを選択
@@ -412,8 +412,8 @@ const ja: Translations = {
         fieldDescriptionPlaceholder:
           "Describe your concept, budget, timeline and any must-have requirements.",
         fieldImages: "画像をアップロード（任意・最大5枚）",
-        submit: "募集を投稿する（審査後に公開）",
-        successMsg: "投稿を受け付けました。管理者の承認後に公開されます。",
+        submit: "募集を投稿する",
+        successMsg: "投稿が完了しました。すぐに公開されます。",
       },
     },
     dashboard: {
@@ -428,7 +428,7 @@ const ja: Translations = {
   // ── F&B Community（掲示板） ──────────────────────────────────────────────
   community: {
     badge: "コミュニティ掲示板",
-    pageTitle: "F&Bコミュニティ",
+    pageTitle: "F&Bコミュニティ掲示板",
     pageSubtitle:
       "シンガポールのF&B関係者同士で、店舗運営の相談やサプライヤー情報を交換できる掲示板です。過去の質問と回答は蓄積され、あとから検索して参考にできます。",
     metaDescription:

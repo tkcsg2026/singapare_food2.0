@@ -173,15 +173,15 @@ export async function sendNewShopListingNotification(data: {
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to: CONTACT_FORWARD_TO,
-    subject: `[店舗物件 承認待ち] ${title}`,
+    subject: `[店舗物件 新規掲載] ${title}`,
     html: [
-      `<p>新しい店舗賃貸・居抜き掲載が承認待ちです。</p>`,
+      `<p>新しい店舗賃貸・居抜き掲載が公開されました。</p>`,
       `<p><strong>タイトル:</strong> ${escapeHtml(title)}</p>`,
       `<p><strong>掲載者:</strong> ${escapeHtml(sellerName)}</p>`,
       `<p><strong>種別:</strong> ${escapeHtml(listingType)}</p>`,
       `<p><a href="https://thekitchenconnection.net/admin">管理ダッシュボードで確認する →</a></p>`,
     ].join("\n"),
-    text: `新しい店舗賃貸・居抜き掲載が承認待ちです。\nタイトル: ${title}\n掲載者: ${sellerName}\n種別: ${listingType}\n管理ダッシュボード: https://thekitchenconnection.net/admin`,
+    text: `新しい店舗賃貸・居抜き掲載が公開されました。\nタイトル: ${title}\n掲載者: ${sellerName}\n種別: ${listingType}\n管理ダッシュボード: https://thekitchenconnection.net/admin`,
   });
 
   return true;

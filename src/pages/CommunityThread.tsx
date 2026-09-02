@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -81,6 +81,9 @@ export default function CommunityThread() {
 
   const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
   const [editReplyText, setEditReplyText] = useState("");
+
+  /** Top of the replies list — scrolled to after posting, where the new reply lands. */
+  const repliesTopRef = useRef<HTMLHeadingElement | null>(null);
 
   const load = useCallback(
     async (track: boolean) => {
@@ -197,6 +200,9 @@ export default function CommunityThread() {
       }
       setReplyText("");
       await load(false);
+      // Replies render newest-first, so the reply just posted lands at the top
+      // of the list — scroll there so the author sees it straight away.
+      repliesTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
       setReplyError(c.thread.replyFailed);
     } finally {
@@ -506,7 +512,7 @@ export default function CommunityThread() {
 
         {/* ── Replies ────────────────────────────────────────────────────── */}
         <section className="mt-8">
-          <h2 className="text-lg font-black tracking-tight mb-4">
+          <h2 ref={repliesTopRef} className="text-lg font-black tracking-tight mb-4 scroll-mt-24">
             {c.thread.repliesTitle}
             <span className="ml-2 text-sm font-semibold text-muted-foreground">
               {thread.reply_count}

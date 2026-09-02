@@ -31,7 +31,7 @@ const Marketplace = () => {
   const { requireLogin, loginPromptModal, isLoggedIn } = useLoginPrompt();
 
   const { data: items } = useFetch<MarketplaceItemRow[]>("/api/marketplace");
-  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=marketplace");
+  const { data: categories } = useFetch<CategoryRow[]>("/api/categories?type=marketplace", [], { cache: "default" });
 
   const conditions = [
     { value: "like-new", label: t.marketplace.conditions["like-new"] },

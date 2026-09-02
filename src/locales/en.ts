@@ -368,9 +368,9 @@ const en = {
       imageUploadError: "Some images failed to upload. Please try again.",
       agreeTerms: "I agree to the terms of service *",
       termsTitle: "Terms of Service",
-      submit: "Post Listing (published after review)",
+      submit: "Post Listing",
       submitting: "Posting...",
-      successMsg: "Your listing has been submitted. It will be published after admin approval.",
+      successMsg: "Your listing has been posted and is now live.",
       errorMsg: "An error occurred.",
       notReadyMsg: "The shop listings board is being set up. Please try again later.",
       // Which side of the board this post belongs to
@@ -410,8 +410,8 @@ const en = {
         fieldDescriptionPlaceholder:
           "Describe your concept, budget, timeline and any must-have requirements.",
         fieldImages: "Upload Images (optional, max 5)",
-        submit: "Post Request (published after review)",
-        successMsg: "Your request has been submitted. It will be published after admin approval.",
+        submit: "Post Request",
+        successMsg: "Your request has been posted and is now live.",
       },
     },
     dashboard: {
@@ -426,7 +426,7 @@ const en = {
   // ── F&B Community (forum) ────────────────────────────────────────────────
   community: {
     badge: "Community Forum",
-    pageTitle: "F&B Community",
+    pageTitle: "F&B Community Forum",
     pageSubtitle:
       "Ask questions, share supplier tips and swap notes with Singapore's F&B people. Every thread stays searchable, so answers keep helping the next person.",
     metaDescription:

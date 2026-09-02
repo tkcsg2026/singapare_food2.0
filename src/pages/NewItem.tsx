@@ -36,7 +36,7 @@ const NewItem = () => {
     t.marketplace.areas.north,
     t.marketplace.areas.south,
   ];
-  const { data: marketplaceCategories } = useFetch<CategoryRow[]>("/api/categories?type=marketplace");
+  const { data: marketplaceCategories } = useFetch<CategoryRow[]>("/api/categories?type=marketplace", [], { cache: "default" });
   const mpCategories = (marketplaceCategories || []).map((c) => c.value);
   const deliveryOptions = [
     t.marketplace.deliveryOptions.pickup,

@@ -14,12 +14,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const supabase = createAdminSupabaseClient();
   if (!supabase) return NextResponse.json([]);
 
+  // Newest reply first, matching the order the thread page renders them in.
   const { data, error } = await supabase
     .from("community_replies")
     .select("*")
     .eq("thread_id", id)
     .eq("status", "active")
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(REPLY_LIMIT);
 
   if (error) {
