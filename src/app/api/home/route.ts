@@ -137,12 +137,18 @@ export async function GET() {
       .eq("status", "approved")
       .order("created_at", { ascending: false })
       .limit(HOME_MARKETPLACE_LIMIT),
+    // News is ordered by the admin-set display date (published_at), falling back
+    // to created_at — the same key /api/news and the home cards use. Postgres
+    // cannot order on that COALESCE here, so fetch the published rows and sort
+    // below. Narrowing to the newest rows by created_at first (as this used to)
+    // silently dropped any article whose display date was recent but whose
+    // created_at was not, which is why new news stopped reaching the home page.
     supabase
       .from("news_articles")
       .select(NEWS_LIST_COLUMNS)
       .eq("published", true)
-      .order("created_at", { ascending: false })
-      .limit(HOME_NEWS_LIMIT * 2),
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false }),
     supabase
       .from("job_notices")
       .select(JOB_LIST_COLUMNS)
